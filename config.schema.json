@@ -1,0 +1,192 @@
+{
+  "pluginAlias": "TasmotaMatter",
+  "pluginType": "platform",
+  "singular": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "required": true
+      },
+      "devices": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "topic",
+            "type",
+            "name"
+          ],
+          "properties": {
+            "topic": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "SWITCH",
+                "LIGHTBULB",
+                "LIGHTBULB_B",
+                "LIGHTBULB_B_CT",
+                "LIGHTBULB_B_HS",
+                "LIGHTBULB_B_HS_CT",
+                "LIGHTBULB_B_CH",
+                "VALVE",
+                "LOCK",
+                "BUTTON",
+                "CONTACT",
+                "SENSOR",
+                "CUSTOM"
+              ]
+            },
+            "index": {
+              "type": "string",
+              "enum": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "custom": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "mqttBroker": {
+        "type": "string"
+      },
+      "mqttUsername": {
+        "type": "string"
+      },
+      "mqttPassword": {
+        "type": "string"
+      },
+      "logTimeouts": {
+        "type": "boolean"
+      },
+      "logUnexpected": {
+        "type": "boolean"
+      }
+    }
+  },
+  "layout": [
+    {
+      "key": "name",
+      "default": "TasmotaMatter",
+      "placeholder": "Homebridge name for the TasmotaMatter platform"
+    },
+    {
+      "key": "devices",
+      "title": "Devices",
+      "expandable": true,
+      "expanded": false,
+      "orderable": false,
+      "buttonText": "Add Device",
+      "default": [],
+      "items": [
+        {
+          "type": "div",
+          "displayFlex": false,
+          "items": [
+            {
+              "type": "flex",
+              "flex-flow": "row",
+              "items": [
+                {
+                  "key": "devices[].topic"
+                },
+                {
+                  "key": "devices[].type",
+                  "titleMap": {
+                    "SWITCH": "Switch",
+                    "LIGHTBULB": "Light",
+                    "LIGHTBULB_B": "Dimmable Light",
+                    "LIGHTBULB_B_CT": "CCT Light",
+                    "LIGHTBULB_B_HS": "RGB Light",
+                    "LIGHTBULB_B_HS_CT": "RGBCCT Light",
+                    "LIGHTBULB_B_CH": "PWM Channel",
+                    "VALVE": "Valve",
+                    "LOCK": "Lock Mechanism",
+                    "BUTTON": "Button",
+                    "CONTACT": "ContactSensor",
+                    "SENSOR": "Autodetect sensors",
+                    "CUSTOM": "Custom definition"
+                  }
+                },
+                {
+                  "key": "devices[].index"
+                },
+                {
+                  "key": "devices[].name",
+                  "title": "HomeKit name"
+                }
+              ]
+            },
+            {
+              "type": "fieldset",
+              "condition": {
+                "functionBody": "try { return model.devices[arrayIndices[0]].type === 'CUSTOM'; } catch(e) { return false; }"
+              },
+              "items": [
+                {
+                  "type": "textarea",
+                  "key": "devices[].custom",
+                  "title": "Custom Definition"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "MQTT Settings",
+      "expandable": true,
+      "expanded": false,
+      "items": [
+        {
+          "key": "mqttBroker",
+          "title": "Hostname",
+          "placeholder": "MQTT Broker hostname if not localhost",
+          "format": "hostname"
+        },
+        {
+          "type": "flex",
+          "flex-flow": "row",
+          "items": [
+            {
+              "key": "mqttUsername",
+              "title": "Username",
+              "placeholder": "MMQTT Broker username if passwort protected"
+            },
+            {
+              "key": "mqttPassword",
+              "title": "Password",
+              "placeholder": "MQTT Broker passwort if passwort protected",
+              "format": "password"
+            }
+          ]
+        },
+        {
+          "key": "logTimeouts",
+          "title": "Write MQTT command response timeouts in log"
+        },
+        {
+          "key": "logUnexpected",
+          "title": "Write unexpected command responses in log"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "displayName": "Homebridge Tasmota Matter",
+  "name": "homebridge-tasmota-matter",
+  "version": "0.0.1",
+  "description": "Control Tasmota Devices Using Matter",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/mdaskalov/homebridge-tasmota-matter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mdaskalov/homebridge-tasmota-matter/issues"
+  },
+  "engines": {
+    "node": "^v22 || ^v24",
+    "homebridge": "^1.6.0 || ^2.0.0"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "lint": "eslint src/**.ts --max-warnings=0",
+    "watch": "npm run build && npm link && nodemon",
+    "build": "rimraf ./dist && tsc",
+    "prepublishOnly": "npm run lint && npm run build",
+    "test": "npm run build && node dist/index.js && echo \"No syntax errors! (node $(node -v))\""
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "tasmota",
+    "matter"
+  ],
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "mqtt": "^5.15.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "eslint": "^10.4.0",
+    "homebridge": "^2.0.2",
+    "nodemon": "^3.1.10",
+    "rimraf": "^6.0.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4"
+  }
+}
