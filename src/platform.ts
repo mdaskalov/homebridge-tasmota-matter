@@ -6,37 +6,26 @@ import {
   MatterAccessory,
   MatterAPI,
 } from 'homebridge';
-
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { Device, TasmotaAccessory, TasmotaMatterContext } from './tasmotaAccessory';
+import type { Device, DeviceConfiguration } from './tasmotaTypes';
+import { TasmotaAccessory } from './tasmotaAccessory';
 import { MQTTClient } from './mqttClient';
-import { getMatter } from './utils.js';
 
 export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
-  public readonly mqttClient: MQTTClient;
-  private readonly matter!: MatterAPI;
-  private readonly configuredAccessories: Map<string, MatterAccessory<TasmotaMatterContext>> = new Map();
+  private readonly configuredAccessories: Map<string, MatterAccessory<Device>> = new Map();
+  private readonly matter: MatterAPI;
+  private readonly mqttClient: MQTTClient;
 
-  constructor(
-    public readonly log: Logging,
-    public readonly config: PlatformConfig,
-    public readonly api: API,
-  ) {
-    this.mqttClient = new MQTTClient(this.log, this.config);
-    this.matter = getMatter(this.api);
-
+  constructor(public readonly log: Logging, public readonly config: PlatformConfig, public readonly api: API) {
     this.log.debug('Finished initializing platform:', this.config.name || 'TasmotaMatter');
 
-    // Does the user have a version of Homebridge that is compatible with matter?
-    if (!this.api.isMatterAvailable?.()) {
-      this.log.warn('Matter is not available in this version of Homebridge. Please update Homebridge to use this plugin.');
+    // Check if the user has matter enabled, this means:
+    if (!this.api.isMatterAvailable?.() || !this.api.isMatterEnabled?.() || !this.api.matter) {
+      throw new Error('Matter is not available / enabled in Homebridge.');
     }
 
-    // Check if the user has matter enabled, this means:
-    if (!this.api.isMatterEnabled?.()) {
-      this.log.warn('Matter is not enabled in Homebridge. Please enable Matter in the Homebridge settings to use this plugin.');
-      return;
-    }
+    this.matter = this.api.matter;
+    this.mqttClient = new MQTTClient(this.log, this.config);
 
     this.api.on('didFinishLaunching', async () => {
       await this.discoverTasmotaDevices();
@@ -53,7 +42,7 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
 
   // Called when homebridge restores cached Matter accessories from disk at startup.
   configureMatterAccessory(accessory: MatterAccessory) {
-    this.configuredAccessories.set(accessory.UUID, accessory as MatterAccessory<TasmotaMatterContext>);
+    this.configuredAccessories.set(accessory.UUID, accessory as MatterAccessory<Device>);
   }
 
   private deviceUUID(device: Device): string {
@@ -71,18 +60,26 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
   private async discoverTasmotaDevices() {
     for (const device of this.config.devices ?? []) {
       const uuid = this.deviceUUID(device);
+      const description = this.deviceDescription(device);
       const restoredAccessory = this.configuredAccessories.get(uuid);
       if (restoredAccessory) {
         this.configuredAccessories.delete(uuid);
       }
-      const context = restoredAccessory ? restoredAccessory.context : {
+      const deviceConfiguration: DeviceConfiguration = {
+        matter: this.matter,
+        mqtt: this.mqttClient,
         uuid,
         device,
         logTimeouts: this.config.logTimeouts,
         logUnexpected: this.config.logUnexpected,
+        serialNumber: restoredAccessory?.serialNumber,
+        manufacturer: restoredAccessory?.manufacturer,
+        model: restoredAccessory?.model,
+        firmwareRevision: restoredAccessory?.firmwareRevision,
+        hardwareRevision: restoredAccessory?.hardwareRevision,
+        clusters: restoredAccessory?.clusters,
       };
-      const accessory = await TasmotaAccessory.create(this.api, this.log, context, this.mqttClient);
-      const description = this.deviceDescription(context.device);
+      const accessory = await TasmotaAccessory.create(this.log, deviceConfiguration);
       if (accessory) {
         await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.log.info(`${restoredAccessory ? 'Restored' : 'Added'} accessory: ${description}`);
@@ -91,8 +88,8 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
       }
     }
     for (const accessoryToRemove of this.configuredAccessories.values()) {
-      const description = this.deviceDescription(accessoryToRemove.context.device);
       await this.matter.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessoryToRemove]);
+      const description = this.deviceDescription(accessoryToRemove.context);
       this.log.info(`Removed accessory: ${description}`);
     }
   }

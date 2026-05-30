@@ -1,28 +1,7 @@
-import type { API, EndpointType, Logger, MatterAccessory, MatterAPI } from 'homebridge';
+import type { Logger, MatterAPI, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
-import { DEVICE_TYPES, TasmotaDeviceDefinition, type TasmotaCommand } from './tasmotaDeviceTypes';
-import { getMatter } from './utils.js';
-
-export type Device = {
-  topic: string;
-  type: string;
-  index?: string;
-  custom?: string;
-  name: string;
-};
-
-export type TasmotaMatterContext = {
-  device: Device;
-  uuid: string;
-  deviceDefinition?: TasmotaDeviceDefinition;
-  serialNumber?: string;
-  manufacturer?: string;
-  model?: string;
-  firmwareRevision?: string;
-  hardwareRevision?: string;
-  logTimeouts?: boolean;
-  logUnexpected?: boolean;
-};
+import type { Device, DeviceConfiguration, TasmotaCommandDefinition } from './tasmotaTypes';
+import { DEVICE_TYPES } from './tasmotaTypes';
 
 type TemplateVariables = { [key: string]: string };
 
@@ -30,10 +9,11 @@ const READ_TIMEOUT = 1000;
 const EXEC_TIMEOUT = 1000;
 const RETRY_TIMEOUT = 30000;
 
-export class TasmotaAccessory implements MatterAccessory<TasmotaMatterContext> {
+export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly log: Logger;
   private readonly matter: MatterAPI;
   private readonly mqtt: MQTTClient;
+  private readonly logUnexpected?: boolean;
   private readonly variables: TemplateVariables;
 
   // Required MatterAccessory properties
@@ -45,58 +25,116 @@ export class TasmotaAccessory implements MatterAccessory<TasmotaMatterContext> {
   public readonly model: string;
   public readonly firmwareRevision: string;
   public readonly hardwareRevision: string;
-  public readonly context: TasmotaMatterContext;
-  public readonly clusters?: MatterAccessory<TasmotaMatterContext>['clusters'];
-  public readonly handlers?: MatterAccessory<TasmotaMatterContext>['handlers'];
-  public readonly parts?: MatterAccessory<TasmotaMatterContext>['parts'];
+  public readonly context: Device;
+  public readonly clusters?: MatterAccessory<Device>['clusters'];
+  public readonly handlers?: MatterAccessory<Device>['handlers'];
+  public readonly parts?: MatterAccessory<Device>['parts'];
 
-  private accessoryInformationRetries = 1;
-
-  private constructor(log: Logger, context: TasmotaMatterContext, matter: MatterAPI, mqtt: MQTTClient) {
-    const idxNum = Number(context.device.index);
+  private constructor(log: Logger, config: DeviceConfiguration) {
+    const idxNum = Number(config.device.index);
     const idxValid = !isNaN(idxNum);
-    const definition = context.deviceDefinition!;
 
     this.log = log;
-    this.matter = matter;
-    this.mqtt = mqtt;
+    this.matter = config.matter;
+    this.mqtt = config.mqtt;
+    this.logUnexpected = config.logUnexpected;
     this.variables = {
-      deviceName: context.device.name,
-      topic: context.device.topic,
-      stat: 'stat/' + context.device.topic,
-      sensor: 'tele/' + context.device.topic + '/SENSOR',
+      deviceName: config.device.name,
+      topic: config.device.topic,
+      stat: 'stat/' + config.device.topic,
+      sensor: 'tele/' + config.device.topic + '/SENSOR',
       idx: idxValid ? String(idxNum) : '',
       zIdx: idxValid ? String(idxNum - 1) : '',
     };
 
-    this.UUID = context.uuid;
-    this.displayName = context.device.name;
-    this.deviceType = matter.deviceTypes[definition.deviceType];
-    this.serialNumber = context.serialNumber ?? 'Unknown';
-    this.manufacturer = context.manufacturer ?? 'Unknown';
-    this.model = context.model ?? 'Unknown';
-    this.firmwareRevision = context.firmwareRevision ?? 'Unknown';
+    if (!config.deviceType) {
+      throw new Error('Incorrect device type!');
+    }
+
+    this.configure(config);
+
+    this.UUID = config.uuid;
+    this.displayName = config.device.name;
+    this.deviceType = config.deviceType;
+    this.serialNumber = config.serialNumber ?? 'Unknown';
+    this.manufacturer = config.manufacturer ?? 'Unknown';
+    this.model = config.model ?? 'Unknown';
+    this.firmwareRevision = config.firmwareRevision ?? 'Unknown';
     this.hardwareRevision = '1.0';
-    this.context = context;
-    this.clusters = {
-      onOff: {
-        onOff: false,
-      },
-    };
-    this.handlers = {
-      onOff: {
-        on: async () => {
-          await this.exec('on', { cmd: 'POWER{idx}', payload: 'ON' });
-        },
-        off: async () => {
-          await this.exec('off', { cmd: 'POWER{idx}', payload: 'OFF' });
-        },
-      },
-    };
+    this.context = config.device;
+    this.clusters = config.clusters;
+    this.handlers = config.handlers;
+    this.parts = config.parts;
+  }
+
+  static async getProperty(config: DeviceConfiguration, property: string, path?: string, res?: string): Promise<string | undefined> {
+    const topic = config.device.topic;
+    const [cmd, ...rest] = property.split(' ');
+    const payload = rest.join(' ');
+    const reqTopic = `cmnd/${topic}/${cmd}`;
+    const resTopic = `stat/${topic}/${res || 'RESULT'}`;
+    try {
+      const response = await config.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
+      return config.mqtt.getValueByPath(response, path || property);
+    } catch (err) {
+      throw `Error reading property ${property} from ${topic}: ${err}`;
+    }
+  }
+
+  static async create(log: Logger, config: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
+    const retriesCount = retries ?? 0;
+    try {
+      config.serialNumber ??=
+        await TasmotaAccessory.getProperty(config, 'STATUS 5', 'StatusNET.Mac', 'STATUS5') ?? config.uuid.replace(/-/g, '');
+      config.manufacturer ??=
+        await TasmotaAccessory.getProperty(config, 'MODULE0', 'Module.0') ?? 'Tasmota';
+      config.model ??=
+        await TasmotaAccessory.getProperty(config, 'Hostname') ?? 'Unknown';
+      config.firmwareRevision ??=
+        (await TasmotaAccessory.getProperty(config, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
+      config.deviceDefinition = DEVICE_TYPES[config.device.type];
+      if (config.deviceDefinition !== undefined) {
+        config.deviceType = config.matter.deviceTypes[config.deviceDefinition.deviceType];
+        return new TasmotaAccessory(log, config);
+      } else {
+        log.error(`Unsupported device type: ${config.device.type}`);
+      }
+    } catch (err) {
+      if (config.logTimeouts) {
+        log.warn(`${config.device.name}: error configuring accessory information (${retriesCount + 1}) : ${err}`);
+      }
+      if (retriesCount < 2) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_TIMEOUT));
+        return TasmotaAccessory.create(log, config, retriesCount + 1);
+      }
+    }
+  }
+
+  private configure(config: DeviceConfiguration) {
+    const deviceDefinition = config.deviceDefinition;
+    if (!deviceDefinition) {
+      throw new Error('Incorrect device definition!');
+    }
+    const handlers: Record<string, Record<string, (args: unknown) => Promise<void>>> = {};
+    let first = true;
+    let configuredClusters = '';
+    for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
+      handlers[clusterName] = {};
+      configuredClusters += `${first ? '' : ', '}${clusterName}`;
+      first = false;
+      for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
+        this.logWarn(`Command: ${command} :- ${JSON.stringify(tasmotaCommand)}`);
+        handlers[clusterName][command] = async (args) => {
+          await this.handle(command, tasmotaCommand as TasmotaCommandDefinition, args);
+        };
+      }
+    }
+
+    this.logInfo(`Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
 
     const topic = this.replaceTemplate('{stat}/RESULT');
     const path = this.replaceTemplate('POWER{idx}');
-    this.logInfo(`Configure status-update on topic: ${topic}, path: ${path}`);
+    this.logDebug(`Status-updates on topic: ${topic}, path: ${path}`);
     this.mqtt.subscribe(topic, message => {
       const value = this.mqtt.getValueByPath(message, path);
       if (value !== undefined) {
@@ -105,74 +143,40 @@ export class TasmotaAccessory implements MatterAccessory<TasmotaMatterContext> {
         this.matter.updateAccessoryState(this.UUID, this.matter.clusterNames.OnOff, { onOff: isOn });
       }
     });
+
+    config.clusters ??= deviceDefinition.clusters;
+    config.handlers = handlers;
   }
 
-  static async getProperty(mqtt: MQTTClient, topic: string, cmd: string, path?: string, res?: string): Promise<string | undefined> {
-    const split = cmd.split(' ');
-    const reqTopic = `cmnd/${topic}/${split[0]}`;
-    const resTopic = `stat/${topic}/${res || 'RESULT'}`;
-    try {
-      const response = await mqtt.read(reqTopic, split[1] || '', resTopic, READ_TIMEOUT);
-      return mqtt.getValueByPath(response, path || cmd);
-    } catch (err) {
-      throw `Error reading property ${cmd} from ${topic}: ${err}`;
+  private replaceTemplate(template: string, args?: unknown): string {
+    return template.replace(/\{(.*?)\}/g, (_, key) => {
+      if (key.startsWith('arg.') && typeof args === 'object' && args !== null) {
+        this.logWarn(`Args: ${JSON.stringify(args)}`);
+        return String((args as Record<string, unknown>)[key.slice(4)] ?? '');
+      }
+      return String(this.variables[key] ?? '');
+    });
+  }
+
+  private async handle(label: string, commandDefinition: TasmotaCommandDefinition, args: unknown): Promise<string> {
+    const command = commandDefinition.set;
+    if (!command) {
+      return '';
     }
-  }
-
-  static async create(api: API, log: Logger, context: TasmotaMatterContext, mqtt: MQTTClient, retries?: number):
-    Promise<TasmotaAccessory | undefined> {
-    const retriesCount = retries ?? 0;
-    try {
-      const matter = getMatter(api);
-      const device = context.device;
-      const topic = device.topic;
-      const deviceDefinition = DEVICE_TYPES[device.type];
-      if (deviceDefinition !== undefined) {
-        context.deviceDefinition = deviceDefinition;
-        context.serialNumber = await TasmotaAccessory.getProperty(mqtt, topic, 'STATUS 5', 'StatusNET.Mac', 'STATUS5');
-        context.manufacturer = await TasmotaAccessory.getProperty(mqtt, topic, 'MODULE0', 'Module.0') || 'Tasmota';
-        context.model = await TasmotaAccessory.getProperty(mqtt, topic, 'Hostname') || 'Unknown';
-        context.firmwareRevision = await TasmotaAccessory.getProperty(mqtt, topic, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') || 'Unknown';
-        context.firmwareRevision = context.firmwareRevision.split('(')[0];
-        return new TasmotaAccessory(log, context, matter, mqtt);
-      } else {
-        log.error(`Unsupported device type: ${device.type}`);
-      }
-    } catch (err) {
-      if (context.logTimeouts) {
-        log.warn(`${context.device.name}: error configuring accessory information: ${err}`);
-      }
-      if (retriesCount < 3) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_TIMEOUT));
-        return TasmotaAccessory.create(api, log, context, mqtt, retriesCount + 1);
-      }
-    }
-    log.warn(`Failed creating TasmotaAccessory ${retriesCount}`);
-  }
-
-  private async getProperty(cmd: string, path?: string, res?: string): Promise<string | undefined> {
-    return await TasmotaAccessory.getProperty(this.mqtt, this.context.device.topic, cmd, path, res);
-  }
-
-  private replaceTemplate(template: string): string {
-    return template.replace(/\{(.*?)\}/g, (_, key) => this.variables[key] || '');
-  }
-
-  private async exec(label: string, command: TasmotaCommand): Promise<string> {
     const split = command.cmd.split(' ');
-    const cmd = this.replaceTemplate(split[0]);
-    const message = command.payload || split[1] || '';
-    const reqTopic = `cmnd/${this.context.device.topic}/${cmd}`;
-    const resTopic = this.replaceTemplate(command.res?.topic || '{stat}/RESULT');
-    const path = this.replaceTemplate(command.res?.path || cmd);
-
+    const cmd = this.replaceTemplate(split[0], args);
+    const message = this.replaceTemplate(split[1] || '', args);
+    const reqTopic = `cmnd/${this.context.topic}/${cmd}`;
+    const resTopic = this.replaceTemplate(command.res?.topic || '{stat}/RESULT', args);
+    const path = this.replaceTemplate(command.res?.path || cmd, args);
     try {
       let response = '';
+      this.logWarn(`sending ${message} to ${reqTopic}`);
       await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, (message) => {
         const res = this.mqtt.getValueByPath(message, path);
         if (res === undefined) {
-          const msg = `${this.context.device.name}:${label} expecting ${path}, ignored: ${message}`;
-          if (this.context.logUnexpected === true) {
+          const msg = `${this.context.name}:${label} expecting ${path}, ignored: ${message}`;
+          if (this.logUnexpected === true) {
             this.logWarn(msg);
           } else {
             this.logDebug(msg);
@@ -186,7 +190,7 @@ export class TasmotaAccessory implements MatterAccessory<TasmotaMatterContext> {
       });
       return response;
     } catch (err) {
-      throw `${this.context.device.name}:${label} Command "${reqTopic} ${message}: ${err}`;
+      throw `${this.context.name}:${label} Command "${reqTopic} ${message}: ${err}`;
     }
   }
 
