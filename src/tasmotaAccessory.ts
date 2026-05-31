@@ -1,7 +1,8 @@
 import type { Logger, MatterAPI, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
-import type { Device, DeviceConfiguration, TasmotaCommandDefinition } from './tasmotaTypes';
+import type { Device, DeviceConfiguration, TasmotaCommand } from './tasmotaTypes';
 import { DEVICE_TYPES } from './tasmotaTypes';
+import { ValueMapper } from './valueMapper';
 
 type TemplateVariables = { [key: string]: string };
 
@@ -81,31 +82,31 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
-  static async create(log: Logger, config: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
+  static async create(log: Logger, cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
     const retriesCount = retries ?? 0;
     try {
-      config.serialNumber ??=
-        await TasmotaAccessory.getProperty(config, 'STATUS 5', 'StatusNET.Mac', 'STATUS5') ?? config.uuid.replace(/-/g, '');
-      config.manufacturer ??=
-        await TasmotaAccessory.getProperty(config, 'MODULE0', 'Module.0') ?? 'Tasmota';
-      config.model ??=
-        await TasmotaAccessory.getProperty(config, 'Hostname') ?? 'Unknown';
-      config.firmwareRevision ??=
-        (await TasmotaAccessory.getProperty(config, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
-      config.deviceDefinition = DEVICE_TYPES[config.device.type];
-      if (config.deviceDefinition !== undefined) {
-        config.deviceType = config.matter.deviceTypes[config.deviceDefinition.deviceType];
-        return new TasmotaAccessory(log, config);
+      cfg.serialNumber ??=
+        await TasmotaAccessory.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5') ?? cfg.uuid.replace(/-/g, '');
+      cfg.manufacturer ??=
+        await TasmotaAccessory.getProperty(cfg, 'MODULE0', 'Module.0') ?? 'Tasmota';
+      cfg.model ??=
+        await TasmotaAccessory.getProperty(cfg, 'Hostname') ?? 'Unknown';
+      cfg.firmwareRevision ??=
+        (await TasmotaAccessory.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
+      cfg.deviceDefinition = DEVICE_TYPES[cfg.device.type];
+      if (cfg.deviceDefinition !== undefined) {
+        cfg.deviceType = cfg.matter.deviceTypes[cfg.deviceDefinition.deviceType];
+        return new TasmotaAccessory(log, cfg);
       } else {
-        log.error(`Unsupported device type: ${config.device.type}`);
+        log.error(`Unsupported device type: ${cfg.device.type}`);
       }
     } catch (err) {
-      if (config.logTimeouts) {
-        log.warn(`${config.device.name}: error configuring accessory information (${retriesCount + 1}) : ${err}`);
+      if (cfg.logTimeouts) {
+        log.warn(`${cfg.device.name}: error configuring accessory information (${retriesCount + 1}) : ${err}`);
       }
       if (retriesCount < 2) {
         await new Promise(resolve => setTimeout(resolve, RETRY_TIMEOUT));
-        return TasmotaAccessory.create(log, config, retriesCount + 1);
+        return TasmotaAccessory.create(log, cfg, retriesCount + 1);
       }
     }
   }
@@ -119,95 +120,66 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     let first = true;
     let configuredClusters = '';
     for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
+      const label = `${config.device.name}:${clusterName}`;
       handlers[clusterName] = {};
       configuredClusters += `${first ? '' : ', '}${clusterName}`;
       first = false;
       for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
-        this.logWarn(`Command: ${command} :- ${JSON.stringify(tasmotaCommand)}`);
         handlers[clusterName][command] = async (args) => {
-          await this.handle(command, tasmotaCommand as TasmotaCommandDefinition, args);
+          const value = ValueMapper.fromMatter(args, clusterName);
+          await this.handle(`${label}:${command}`, tasmotaCommand as TasmotaCommand, value);
         };
       }
+      const udpate = clusterCommands.update;
+      const topic = this.replaceTemplate(udpate.topic || '{stat}/RESULT');
+      const path = this.replaceTemplate(udpate.path || '');
+      this.mqtt.subscribe(topic, message => {
+        const value = this.mqtt.getValueByPath(message, path);
+        const matterValue = ValueMapper.toMatter(value, clusterName);
+        this.matter.updateAccessoryState(this.UUID, clusterName, matterValue);
+      });
     }
 
-    this.logInfo(`Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
-
-    const topic = this.replaceTemplate('{stat}/RESULT');
-    const path = this.replaceTemplate('POWER{idx}');
-    this.logDebug(`Status-updates on topic: ${topic}, path: ${path}`);
-    this.mqtt.subscribe(topic, message => {
-      const value = this.mqtt.getValueByPath(message, path);
-      if (value !== undefined) {
-        this.logInfo(`update value: ${value}`);
-        const isOn = (value === 'ON');
-        this.matter.updateAccessoryState(this.UUID, this.matter.clusterNames.OnOff, { onOff: isOn });
-      }
-    });
+    this.log.debug(`${config.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
 
     config.clusters ??= deviceDefinition.clusters;
     config.handlers = handlers;
   }
 
-  private replaceTemplate(template: string, args?: unknown): string {
+  private replaceTemplate(template: string, value?: string): string {
     return template.replace(/\{(.*?)\}/g, (_, key) => {
-      if (key.startsWith('arg.') && typeof args === 'object' && args !== null) {
-        this.logWarn(`Args: ${JSON.stringify(args)}`);
-        return String((args as Record<string, unknown>)[key.slice(4)] ?? '');
-      }
-      return String(this.variables[key] ?? '');
+      return (key === 'value' ? value : String(this.variables[key])) ?? '';
     });
   }
 
-  private async handle(label: string, commandDefinition: TasmotaCommandDefinition, args: unknown): Promise<string> {
-    const command = commandDefinition.set;
-    if (!command) {
-      return '';
-    }
-    const split = command.cmd.split(' ');
-    const cmd = this.replaceTemplate(split[0], args);
-    const message = this.replaceTemplate(split[1] || '', args);
+  private async handle(label: string, command: TasmotaCommand, value?: string): Promise<string> {
+    const [cmd, ...other] = this.replaceTemplate(command.cmd, value).split(' ');
+    const message = this.replaceTemplate(other.join(' ') || '', value);
     const reqTopic = `cmnd/${this.context.topic}/${cmd}`;
-    const resTopic = this.replaceTemplate(command.res?.topic || '{stat}/RESULT', args);
-    const path = this.replaceTemplate(command.res?.path || cmd, args);
+    const resTopic = this.replaceTemplate(command.res?.topic || '{stat}/RESULT', value);
+    const path = this.replaceTemplate(command.res?.path || cmd, value);
     try {
       let response = '';
-      this.logWarn(`sending ${message} to ${reqTopic}`);
       await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, (message) => {
         const res = this.mqtt.getValueByPath(message, path);
         if (res === undefined) {
-          const msg = `${this.context.name}:${label} expecting ${path}, ignored: ${message}`;
+          const msg = `${label} :- expecting ${path}, ignored: ${message}`;
           if (this.logUnexpected === true) {
-            this.logWarn(msg);
+            this.log.warn(msg);
           } else {
-            this.logDebug(msg);
+            this.log.debug(msg);
           }
-          return false; // ignore this message and wait
+          return false; // ignore
         }
         response = res;
         if (command.res?.shared !== true) {
-          return true; // consume message
+          return true; // consume
         }
       });
       return response;
     } catch (err) {
-      throw `${this.context.name}:${label} Command "${reqTopic} ${message}: ${err}`;
+      throw `${label} Command "${reqTopic} ${message}: ${err}`;
     }
-  }
-
-  private logInfo(message: string, ...args: unknown[]): void {
-    this.log.info(`${this.displayName}: ${message}`, ...args);
-  }
-
-  private logError(message: string, ...args: unknown[]): void {
-    this.log.error(`${this.displayName}: ${message}`, ...args);
-  }
-
-  private logDebug(message: string, ...args: unknown[]): void {
-    this.log.debug(`${this.displayName}: ${message}`, ...args);
-  }
-
-  private logWarn(message: string, ...args: unknown[]): void {
-    this.log.warn(`${this.displayName}: ${message}`, ...args);
   }
 
 }
