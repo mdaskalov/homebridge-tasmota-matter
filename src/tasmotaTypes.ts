@@ -28,24 +28,11 @@ export type DeviceConfiguration = {
   parts?: MatterAccessory<Device>['parts'];
 };
 
-export type SplitMapping = {
-  separator?: string;
-  index: number;
-};
-
-export type SwapMapping = {
-  from: string;
-  to: string;
-};
-
-export type Mapping = SplitMapping | SwapMapping[]
-
 export type TasmotaResponse = {
   topic?: string;
   path?: string;
   update?: boolean;
   shared?: boolean;
-  mapping?: Mapping;
 };
 
 export type TasmotaCommand = {
@@ -53,18 +40,16 @@ export type TasmotaCommand = {
   res?: TasmotaResponse;
 };
 
-export type TasmotaCommandDefinition = {
-  set?: TasmotaCommand;
-  stat?: TasmotaResponse;
+export type ClusterHandlerMap = {
+  update: TasmotaResponse;
+  [attribute: string]: TasmotaCommand | TasmotaResponse;
 };
 
 export type TasmotaDeviceDefinition = {
   deviceType: string;
   clusters?: MatterAccessory<Device>['clusters'];
   handlers?: {
-    [cluster: string]: {
-      [commandName: string]: TasmotaCommandDefinition
-    }
+    [cluster: string]: ClusterHandlerMap
   }
 };
 
@@ -78,8 +63,9 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
     },
     handlers: {
       onOff: {
-        on: { set: { cmd: 'POWER{idx} ON' } },
-        off: { set: { cmd: 'POWER{idx} OFF' } },
+        update: { path: 'POWER{idx}' },
+        on: { cmd: 'POWER{idx} ON' },
+        off: { cmd: 'POWER{idx} OFF' },
       },
     },
   },
@@ -92,8 +78,9 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
     },
     handlers: {
       onOff: {
-        on: { set: { cmd: 'POWER{idx} ON' } },
-        off: { set: { cmd: 'POWER{idx} OFF' } },
+        update: { path: 'POWER{idx}' },
+        on: { cmd: 'POWER{idx} ON' },
+        off: { cmd: 'POWER{idx} OFF' },
       },
     },
   },
@@ -105,17 +92,20 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
       },
       levelControl: {
         currentLevel: 254,
-        minLevel: 1,
+        minLevel: 0,
         maxLevel: 254,
       },
     },
     handlers: {
       onOff: {
-        on: { set: { cmd: 'POWER{idx} ON' } },
-        off: { set: { cmd: 'POWER{idx} OFF' } },
+        update: { path: 'POWER{idx}' },
+        on: { cmd: 'POWER{idx} ON' },
+        off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        moveToLevelWithOnOff: { set: { cmd: 'Channel{idx} {arg.level}' } },
+        update: { path: 'Dimmer' },
+        moveToLevel: { cmd: 'Dimmer {value}' },
+        moveToLevelWithOnOff: { cmd: 'Dimmer {value}' },
       },
     },
   },
