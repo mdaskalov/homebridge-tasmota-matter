@@ -92,7 +92,7 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
       },
       levelControl: {
         currentLevel: 254,
-        minLevel: 0,
+        minLevel: 1,
         maxLevel: 254,
       },
     },
@@ -109,4 +109,18 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
       },
     },
   },
+  BUTTON: {
+    deviceType: 'GenericSwitch',
+    clusters: {
+      switch: {
+        currentPosition: 0,
+        numberOfPositions: 2,
+      },
+    },
+    handlers: {
+      switch: {
+        update: { path: 'Button{idx}.Action' },
+      },
+    },
+  }
 };

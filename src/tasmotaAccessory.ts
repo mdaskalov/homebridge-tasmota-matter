@@ -95,7 +95,13 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         (await TasmotaAccessory.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
       cfg.deviceDefinition = DEVICE_TYPES[cfg.device.type];
       if (cfg.deviceDefinition !== undefined) {
-        cfg.deviceType = cfg.matter.deviceTypes[cfg.deviceDefinition.deviceType];
+        if (cfg.deviceDefinition.deviceType === 'GenericSwitch') {
+          cfg.deviceType = cfg.matter.deviceTypes.GenericSwitch.with(
+            cfg.matter.deviceTypes.GenericSwitch.requirements.SwitchServer,
+          );
+        } else {
+          cfg.deviceType = cfg.matter.deviceTypes[cfg.deviceDefinition.deviceType];
+        }
         return new TasmotaAccessory(log, cfg);
       } else {
         log.error(`Unsupported device type: ${cfg.device.type}`);
