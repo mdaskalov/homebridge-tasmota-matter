@@ -12,7 +12,8 @@ import { TasmotaAccessory } from './tasmotaAccessory';
 import { MQTTClient } from './mqttClient';
 
 export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
-  private readonly configuredAccessories: Map<string, MatterAccessory<Device>> = new Map();
+  private readonly configuredAccessories = new Map<string, MatterAccessory<Device>>();
+  private readonly activeAccessories = new Map<string, TasmotaAccessory>();
   private readonly matter: MatterAPI;
   private readonly mqttClient: MQTTClient;
 
@@ -79,15 +80,17 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
         hardwareRevision: restoredAccessory?.hardwareRevision,
         clusters: restoredAccessory?.clusters,
       };
-      const accessory = await TasmotaAccessory.create(this.log, deviceConfiguration);
-      if (accessory) {
-        await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      const tasmotaInstance = await TasmotaAccessory.create(this.log, deviceConfiguration);
+      if (tasmotaInstance) {
+        this.activeAccessories.set(uuid, tasmotaInstance);
+        await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [tasmotaInstance.toAccessory()]);
         this.log.info(`${restoredAccessory ? 'Restored' : 'Added'} accessory: ${description}`);
       } else {
         this.log.error(`Unable to register accessory: ${description}`);
       }
     }
     for (const accessoryToRemove of this.configuredAccessories.values()) {
+      this.activeAccessories.delete(accessoryToRemove.UUID);
       await this.matter.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessoryToRemove]);
       const description = this.deviceDescription(accessoryToRemove.context);
       this.log.info(`Removed accessory: ${description}`);

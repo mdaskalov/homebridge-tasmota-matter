@@ -182,4 +182,21 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
+  public toAccessory(): MatterAccessory<Device> {
+    return {
+      UUID: this.UUID,
+      displayName: this.displayName,
+      deviceType: this.deviceType,
+      serialNumber: this.serialNumber,
+      manufacturer: this.manufacturer,
+      model: this.model,
+      firmwareRevision: this.firmwareRevision,
+      hardwareRevision: this.hardwareRevision,
+      context: this.context,
+      clusters: this.clusters,
+      handlers: this.handlers,
+      parts: this.parts,
+    };
+  }
+
 }
