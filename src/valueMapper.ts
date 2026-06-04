@@ -50,6 +50,10 @@ export class ValueMapper {
     switch: (value) => {
       this.emitGesture(value);
     },
+    booleanState: (value) => {
+      const isOpen = (value === 'ON');
+      this.updateState(this.matter.clusterNames.BooleanState, { stateValue: !isOpen });
+    },
   };
 
   private readonly unmappers: ClusterUnmappers = {

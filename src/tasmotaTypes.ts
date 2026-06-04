@@ -123,4 +123,17 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
       },
     },
   },
+  CONTACT: {
+    deviceType: 'ContactSensor',
+    clusters: {
+      booleanState: {
+        stateValue: true,
+      },
+    },
+    handlers: {
+      booleanState: {
+        update: { path: 'Switch{idx}.Action' },
+      },
+    },
+  },
 };
