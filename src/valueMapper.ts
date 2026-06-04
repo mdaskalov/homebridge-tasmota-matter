@@ -1,6 +1,5 @@
 import type { Logger, ClusterStateMap, MatterAPI } from 'homebridge';
 import type { DeviceConfiguration } from './tasmotaTypes';
-import type { MQTTClient } from './mqttClient';
 
 type ClusterMappers = {
   [K in keyof ClusterStateMap]?: (value: string | undefined) => void;
