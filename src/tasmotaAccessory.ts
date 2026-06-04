@@ -1,4 +1,4 @@
-import type { Logger, MatterAPI, EndpointType, MatterAccessory } from 'homebridge';
+import type { Logger, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
 import type { Device, DeviceConfiguration, TasmotaCommand } from './tasmotaTypes';
 import { DEVICE_TYPES } from './tasmotaTypes';
@@ -12,7 +12,6 @@ const RETRY_TIMEOUT = 30000;
 
 export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly log: Logger;
-  private readonly matter: MatterAPI;
   private readonly mqtt: MQTTClient;
   private readonly valueMapper: ValueMapper;
   private readonly logUnexpected?: boolean;
@@ -32,53 +31,52 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   public readonly handlers?: MatterAccessory<Device>['handlers'];
   public readonly parts?: MatterAccessory<Device>['parts'];
 
-  private constructor(log: Logger, config: DeviceConfiguration) {
-    const idxNum = Number(config.device.index);
+  private constructor(log: Logger, cfg: DeviceConfiguration) {
+    const idxNum = Number(cfg.device.index);
     const idxValid = !isNaN(idxNum);
 
     this.log = log;
-    this.matter = config.matter;
-    this.mqtt = config.mqtt;
-    this.valueMapper = new ValueMapper(log, config);
-    this.logUnexpected = config.logUnexpected;
+    this.mqtt = cfg.mqtt;
+    this.valueMapper = new ValueMapper(log, cfg);
+    this.logUnexpected = cfg.logUnexpected;
     this.variables = {
-      deviceName: config.device.name,
-      topic: config.device.topic,
-      stat: 'stat/' + config.device.topic,
-      sensor: 'tele/' + config.device.topic + '/SENSOR',
+      deviceName: cfg.device.name,
+      topic: cfg.device.topic,
+      stat: 'stat/' + cfg.device.topic,
+      sensor: 'tele/' + cfg.device.topic + '/SENSOR',
       idx: idxValid ? String(idxNum) : '',
       zIdx: idxValid ? String(idxNum - 1) : '',
     };
 
-    if (!config.deviceType) {
+    if (!cfg.deviceType) {
       throw new Error('Incorrect device type!');
     }
 
-    this.configure(config);
+    this.configure(cfg);
 
-    this.UUID = config.uuid;
-    this.displayName = config.device.name;
-    this.deviceType = config.deviceType;
-    this.serialNumber = config.serialNumber ?? 'Unknown';
-    this.manufacturer = config.manufacturer ?? 'Unknown';
-    this.model = config.model ?? 'Unknown';
-    this.firmwareRevision = config.firmwareRevision ?? 'Unknown';
+    this.UUID = cfg.uuid;
+    this.displayName = cfg.device.name;
+    this.deviceType = cfg.deviceType;
+    this.serialNumber = cfg.serialNumber ?? 'Unknown';
+    this.manufacturer = cfg.manufacturer ?? 'Unknown';
+    this.model = cfg.model ?? 'Unknown';
+    this.firmwareRevision = cfg.firmwareRevision ?? 'Unknown';
     this.hardwareRevision = '1.0';
-    this.context = config.device;
-    this.clusters = config.clusters;
-    this.handlers = config.handlers;
-    this.parts = config.parts;
+    this.context = cfg.device;
+    this.clusters = cfg.clusters;
+    this.handlers = cfg.handlers;
+    this.parts = cfg.parts;
   }
 
-  static async getProperty(config: DeviceConfiguration, property: string, path?: string, res?: string): Promise<string | undefined> {
-    const topic = config.device.topic;
+  static async getProperty(cfg: DeviceConfiguration, property: string, path?: string, res?: string): Promise<string | undefined> {
+    const topic = cfg.device.topic;
     const [cmd, ...rest] = property.split(' ');
     const payload = rest.join(' ');
     const reqTopic = `cmnd/${topic}/${cmd}`;
     const resTopic = `stat/${topic}/${res || 'RESULT'}`;
     try {
-      const response = await config.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
-      return config.mqtt.getValueByPath(response, path || property);
+      const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
+      return cfg.mqtt.getValueByPath(response, path || property);
     } catch (err) {
       throw `Error reading property ${property} from ${topic}: ${err}`;
     }
@@ -119,26 +117,26 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
-  private configure(config: DeviceConfiguration) {
-    const deviceDefinition = config.deviceDefinition;
+  private configure(cfg: DeviceConfiguration, deviceDefinition?: TasmotaDeviceDefinition) {
+    deviceDefinition ??= cfg.deviceDefinition;
     if (!deviceDefinition) {
       throw new Error('Incorrect device definition!');
     }
     let configuredClusters = '';
-    config.clusters ??= deviceDefinition.clusters;
+    cfg.clusters ??= deviceDefinition.clusters;
     let first = true;
     const handlers: Record<string, Record<string, (args: unknown) => Promise<void>>> = {};
     for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
       const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
-      const label = `${config.device.name}:${clusterName}`;
+      const label = `${cfg.device.name}:${clusterName}`;
       configuredClusters += `${first ? '' : ', '}${clusterName}`;
       first = false;
       for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
         if (command === 'update') {
           const topic = this.replaceTemplate(tasmotaCommand.topic || '{stat}/RESULT');
           const path = this.replaceTemplate(tasmotaCommand.path || '');
-          config.mqtt.subscribe(topic, message => {
-            const value = config.mqtt.getValueByPath(message, path);
+          cfg.mqtt.subscribe(topic, message => {
+            const value = cfg.mqtt.getValueByPath(message, path);
             this.valueMapper.toMatter(value, clusterName);
           });
         } else {
@@ -153,10 +151,10 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       }
     }
     if (Object.keys(handlers).length > 0) {
-      config.handlers = handlers;
+      cfg.handlers = handlers;
     }
 
-    this.log.debug(`${config.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
+    this.log.debug(`${cfg.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
   }
 
   private replaceTemplate(template: string, value?: string): string {
