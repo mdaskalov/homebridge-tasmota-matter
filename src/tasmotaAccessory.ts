@@ -124,34 +124,39 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     if (!deviceDefinition) {
       throw new Error('Incorrect device definition!');
     }
-    const handlers: Record<string, Record<string, (args: unknown) => Promise<void>>> = {};
-    let first = true;
     let configuredClusters = '';
+    config.clusters ??= deviceDefinition.clusters;
+    let first = true;
+    const handlers: Record<string, Record<string, (args: unknown) => Promise<void>>> = {};
     for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
+      const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
       const label = `${config.device.name}:${clusterName}`;
-      handlers[clusterName] = {};
       configuredClusters += `${first ? '' : ', '}${clusterName}`;
       first = false;
       for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
-        handlers[clusterName][command] = async (args) => {
-          const value = ValueMapper.fromMatter(args, clusterName);
-          await this.handle(`${label}:${command}`, tasmotaCommand as TasmotaCommand, value);
-        };
+        if (command === 'update') {
+          const topic = this.replaceTemplate(tasmotaCommand.topic || '{stat}/RESULT');
+          const path = this.replaceTemplate(tasmotaCommand.path || '');
+          config.mqtt.subscribe(topic, message => {
+            const value = config.mqtt.getValueByPath(message, path);
+            this.valueMapper.toMatter(value, clusterName);
+          });
+        } else {
+          clusterHandlers[command] = async (args) => {
+            const value = this.valueMapper.fromMatter(args, clusterName);
+            await this.handle(`${label}:${command}`, tasmotaCommand, value);
+          };
+        }
       }
-      const udpate = clusterCommands.update;
-      const topic = this.replaceTemplate(udpate.topic || '{stat}/RESULT');
-      const path = this.replaceTemplate(udpate.path || '');
-      this.mqtt.subscribe(topic, message => {
-        const value = this.mqtt.getValueByPath(message, path);
-        const matterValue = ValueMapper.toMatter(value, clusterName);
-        this.matter.updateAccessoryState(this.UUID, clusterName, matterValue);
-      });
+      if (Object.keys(clusterHandlers).length > 0) {
+        handlers[clusterName] = clusterHandlers;
+      }
+    }
+    if (Object.keys(handlers).length > 0) {
+      config.handlers = handlers;
     }
 
     this.log.debug(`${config.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
-
-    config.clusters ??= deviceDefinition.clusters;
-    config.handlers = handlers;
   }
 
   private replaceTemplate(template: string, value?: string): string {
