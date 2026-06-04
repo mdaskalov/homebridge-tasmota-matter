@@ -14,6 +14,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly log: Logger;
   private readonly matter: MatterAPI;
   private readonly mqtt: MQTTClient;
+  private readonly valueMapper: ValueMapper;
   private readonly logUnexpected?: boolean;
   private readonly variables: TemplateVariables;
 
@@ -38,6 +39,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.log = log;
     this.matter = config.matter;
     this.mqtt = config.mqtt;
+    this.valueMapper = new ValueMapper(log, config);
     this.logUnexpected = config.logUnexpected;
     this.variables = {
       deviceName: config.device.name,

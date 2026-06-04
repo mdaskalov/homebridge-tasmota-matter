@@ -1,47 +1,80 @@
-import type { ClusterStateMap } from 'homebridge';
-
-type ClusterValueMapper<K extends keyof ClusterStateMap> = (value: unknown) => Partial<ClusterStateMap[K]>;
-type ClusterValueUnmapper = (attributes: unknown) => string;
+import type { Logger, ClusterStateMap, MatterAPI } from 'homebridge';
+import type { DeviceConfiguration } from './tasmotaTypes';
+import type { MQTTClient } from './mqttClient';
 
 type ClusterMappers = {
-  [K in keyof ClusterStateMap]?: ClusterValueMapper<K>;
+  [K in keyof ClusterStateMap]?: (value: string | undefined) => void;
 };
 
 type ClusterUnmappers = {
-  [K in keyof ClusterStateMap]?: ClusterValueUnmapper;
+  [K in keyof ClusterStateMap]?: (attributes: unknown) => string;
 };
 
 export class ValueMapper {
-  private static readonly mappers: ClusterMappers = {
-    onOff: (value) => ({
-      onOff: value === 'ON' || value === true || value === 1,
-    }),
-    levelControl: (value) => ({
-      currentLevel: Math.round((Number(value) / 100) * 254),
-    }),
+  private readonly log: Logger;
+  private readonly uuid: string;
+  private readonly matter: MatterAPI;
+
+  constructor(log: Logger, config: DeviceConfiguration) {
+    this.log = log;
+    this.uuid = config.uuid;
+    this.matter = config.matter;
+  }
+
+  async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>) {
+    await this.matter.updateAccessoryState(this.uuid, cluster, attributes);
+  }
+
+  private async emitGesture(value?: string, position: number = 1, partId?: string) {
+    if (value === 'SINGLE') {
+      await this.matter.switch.emitGesture(this.uuid, 'singlePress', { position, partId });
+    } else if (value === 'DOUBLE') {
+      await this.matter.switch.emitGesture(this.uuid, 'doublePress', { position, partId });
+    } else if (value === 'HOLD') {
+      await this.matter.switch.emit(this.uuid, 'press', { position, partId });
+    } else if (value === 'CLEAR') {
+      await this.matter.switch.emit(this.uuid, 'release', { partId });
+    }
+  }
+
+  private readonly mappers: ClusterMappers = {
+    onOff: (value) => {
+      const onOff = (value === 'ON');
+      this.updateState(this.matter.clusterNames.OnOff, { onOff });
+    },
+    levelControl: (value) => {
+      const currentLevel = Math.round((Number(value) / 100) * 254);
+      if (currentLevel !== 0) {
+        this.updateState(this.matter.clusterNames.LevelControl, { currentLevel });
+      }
+    },
+    switch: (value) => {
+      this.emitGesture(value);
+    },
   };
 
-  private static readonly unmappers: ClusterUnmappers = {
+  private readonly unmappers: ClusterUnmappers = {
     levelControl: (attrs) => {
       const { level } = attrs as { level?: number };
       return String(Math.round(((level ?? 0) / 254) * 100));
     },
   };
 
-  static toMatter<K extends keyof ClusterStateMap>(value: unknown, cluster: string): Partial<ClusterStateMap[K]> {
+  toMatter<K extends keyof ClusterStateMap>(value: string | undefined, cluster: string) {
     const key = cluster as K;
-    const mapper = this.mappers[key] as ClusterValueMapper<K> | undefined;
+    const mapper = this.mappers[key];
     if (!mapper) {
       throw new Error(`No value mapper registered for cluster: ${cluster}`);
     }
-    return mapper(value);
+    if (value !== undefined) {
+      mapper(value);
+    }
   }
 
-  static fromMatter(attributes: unknown, cluster: string): string | undefined {
+  fromMatter(attributes: unknown, cluster: string): string | undefined {
     const unmapper = this.unmappers[cluster as keyof ClusterStateMap];
     if (unmapper) {
       return unmapper(attributes);
     }
   }
-
 }
