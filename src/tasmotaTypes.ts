@@ -122,5 +122,5 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
         update: { path: 'Button{idx}.Action' },
       },
     },
-  }
+  },
 };
