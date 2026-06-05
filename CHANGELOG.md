@@ -2,7 +2,7 @@
 
 All notable changes will be documented in this file.
 
-## 0.0.9
+## v0.0.9
 - Added contact sensor
 - Added automatic sensor detection (`SENSOR` type)
 - Added Switch as Button (`BUTTON_SW` type) - emits `ON`: `singlePress` or `OFF`: `doublePress`
