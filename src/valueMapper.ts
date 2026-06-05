@@ -63,7 +63,25 @@ export class ValueMapper {
     },
   };
 
-  toMatter<K extends keyof ClusterStateMap>(value: string | undefined, cluster: string) {
+  deviceType(deviceType: string): EndpointType {
+    if (deviceType === 'GenericSwitch') {
+      return this.matter.deviceTypes.GenericSwitch.with(
+        this.matter.deviceTypes.GenericSwitch.requirements.server.mandatory.Switch,
+      );
+    } else if (deviceType === 'TemperatureSensor') {
+      return this.matter.deviceTypes.TemperatureSensor.with(
+        this.matter.deviceTypes.TemperatureSensor.requirements.server.mandatory.TemperatureMeasurement,
+      );
+    } else if (deviceType === 'HumiditySensor') {
+      return this.matter.deviceTypes.HumiditySensor.with(
+        this.matter.deviceTypes.HumiditySensor.requirements.server.mandatory.RelativeHumidityMeasurement,
+      );
+    } else {
+      return this.matter.deviceTypes[deviceType];
+    }
+  }
+
+  toMatter<K extends keyof ClusterStateMap>(value: string | undefined, cluster: string, partId?: string) {
     const key = cluster as K;
     const mapper = this.mappers[key];
     if (!mapper) {
