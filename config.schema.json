@@ -35,6 +35,7 @@
                 "VALVE",
                 "LOCK",
                 "BUTTON",
+                "BUTTON_SW",
                 "CONTACT",
                 "SENSOR",
                 "CUSTOM"
@@ -118,6 +119,7 @@
                     "VALVE": "Valve",
                     "LOCK": "Lock Mechanism",
                     "BUTTON": "Button",
+                    "BUTTON_SW": "Button Switch",
                     "CONTACT": "ContactSensor",
                     "SENSOR": "Autodetect sensors",
                     "CUSTOM": "Custom definition"

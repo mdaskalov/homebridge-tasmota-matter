@@ -123,6 +123,20 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
     },
   },
+  BUTTON_SW: {
+    deviceType: 'GenericSwitch',
+    clusters: {
+      switch: {
+        currentPosition: 0,
+        numberOfPositions: 2,
+      },
+    },
+    handlers: {
+      switch: {
+        update: { path: 'POWER{idx}' },
+      },
+    },
+  },
   CONTACT: {
     deviceType: 'ContactSensor',
     clusters: {
