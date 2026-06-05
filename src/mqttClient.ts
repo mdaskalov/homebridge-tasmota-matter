@@ -88,14 +88,22 @@ export class MQTTClient {
       .replace(/\[(\d+)\]/g, '.$1')   // normalize [0] → .0
       .split('.')
       .filter(Boolean)
-      .reduce((acc, key) => acc !== null && typeof acc === 'object' ? (acc as Record<string, unknown>)[key] : undefined, obj);
+      .reduce((acc, key) => {
+        if (acc === null || typeof acc !== 'object' || !Object.prototype.hasOwnProperty.call(acc, key)) {
+          return undefined;
+        }
+        return (acc as Record<string, unknown>)[key];
+      }, obj);
   }
 
   getValueByPath(json: string, path: string): string | undefined {
     try {
       const obj = JSON.parse(json);
       const val = this.getByPath(obj, path);
-      return val !== undefined ? String(val) : undefined;
+      if (val === undefined || val === null) {
+        return undefined;
+      }
+      return typeof val === 'object' ? JSON.stringify(val) : String(val);
     } catch {
       return undefined;
     }
