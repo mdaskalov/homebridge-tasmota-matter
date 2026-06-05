@@ -1,4 +1,4 @@
-import type { EndpointType, MatterAccessory, MatterAPI } from 'homebridge';
+import type { Logger, EndpointType, MatterAccessory, MatterAPI } from 'homebridge';
 import { MQTTClient } from './mqttClient';
 
 export type Device = {
@@ -10,6 +10,7 @@ export type Device = {
 };
 
 export type DeviceConfiguration = {
+  log: Logger;
   matter: MatterAPI;
   mqtt: MQTTClient;
   uuid: string,
@@ -22,6 +23,7 @@ export type DeviceConfiguration = {
   firmwareRevision?: string;
   hardwareRevision?: string;
   deviceDefinition?: TasmotaDeviceDefinition;
+  sensors?: string;
   deviceType?: EndpointType;
   clusters?: MatterAccessory<Device>['clusters'];
   handlers?: MatterAccessory<Device>['handlers'];
@@ -48,12 +50,10 @@ export type ClusterHandlerMap = {
 export type TasmotaDeviceDefinition = {
   deviceType: string;
   clusters?: MatterAccessory<Device>['clusters'];
-  handlers?: {
-    [cluster: string]: ClusterHandlerMap
-  }
+  handlers?: Record<string, ClusterHandlerMap>;
 };
 
-export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
+export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
   SWITCH: {
     deviceType: 'OnOffSwitch',
     clusters: {
@@ -133,6 +133,39 @@ export const DEVICE_TYPES: { [key: string]: TasmotaDeviceDefinition } = {
     handlers: {
       booleanState: {
         update: { path: 'Switch{idx}.Action' },
+      },
+    },
+  },
+};
+
+export const SENSOR_TYPES: Record<string, TasmotaDeviceDefinition> = {
+  Temperature: {
+    deviceType: 'TemperatureSensor',
+    clusters: {
+      temperatureMeasurement: {
+        measuredValue: 2200,
+        minMeasuredValue: -5000,
+        maxMeasuredValue: 10000,
+      },
+    },
+    handlers: {
+      temperatureMeasurement: {
+        update: { path: 'Temperature' },
+      },
+    },
+  },
+  Humidity: {
+    deviceType: 'HumiditySensor',
+    clusters: {
+      relativeHumidityMeasurement: {
+        measuredValue: 5500,
+        minMeasuredValue: 0,
+        maxMeasuredValue: 10000,
+      },
+    },
+    handlers: {
+      relativeHumidityMeasurement: {
+        update: { path: 'Humidity' },
       },
     },
   },

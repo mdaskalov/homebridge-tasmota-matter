@@ -1,27 +1,27 @@
-import type { Logger, ClusterStateMap, MatterAPI } from 'homebridge';
+import type { Logger, MatterAPI, ClusterStateMap, EndpointType } from 'homebridge';
 import type { DeviceConfiguration } from './tasmotaTypes';
 
 type ClusterMappers = {
-  [K in keyof ClusterStateMap]?: (value: string | undefined) => void;
+  [K in keyof ClusterStateMap]?: (value: string | undefined, partId?: string) => void;
 };
 
 type ClusterUnmappers = {
   [K in keyof ClusterStateMap]?: (attributes: unknown) => string;
 };
 
-export class ValueMapper {
+export class TypeMapper {
   private readonly log: Logger;
   private readonly uuid: string;
   private readonly matter: MatterAPI;
 
-  constructor(log: Logger, config: DeviceConfiguration) {
-    this.log = log;
-    this.uuid = config.uuid;
-    this.matter = config.matter;
+  constructor(cfg: DeviceConfiguration) {
+    this.log = cfg.log;
+    this.uuid = cfg.uuid;
+    this.matter = cfg.matter;
   }
 
-  async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>) {
-    await this.matter.updateAccessoryState(this.uuid, cluster, attributes);
+  async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>, partId?: string) {
+    await this.matter.updateAccessoryState(this.uuid, cluster, attributes, partId);
   }
 
   private async emitGesture(value?: string, position: number = 1, partId?: string) {
@@ -37,22 +37,30 @@ export class ValueMapper {
   }
 
   private readonly mappers: ClusterMappers = {
-    onOff: (value) => {
+    onOff: (value, partId?: string) => {
       const onOff = (value === 'ON');
-      this.updateState(this.matter.clusterNames.OnOff, { onOff });
+      this.updateState(this.matter.clusterNames.OnOff, { onOff }, partId);
     },
-    levelControl: (value) => {
+    levelControl: (value, partId?: string) => {
       const currentLevel = Math.round((Number(value) / 100) * 254);
       if (currentLevel !== 0) {
-        this.updateState(this.matter.clusterNames.LevelControl, { currentLevel });
+        this.updateState(this.matter.clusterNames.LevelControl, { currentLevel }, partId);
       }
     },
     switch: (value) => {
       this.emitGesture(value);
     },
-    booleanState: (value) => {
+    booleanState: (value, partId?: string) => {
       const isOpen = (value === 'ON');
-      this.updateState(this.matter.clusterNames.BooleanState, { stateValue: !isOpen });
+      this.updateState(this.matter.clusterNames.BooleanState, { stateValue: !isOpen }, partId);
+    },
+    temperatureMeasurement: (value, partId?: string) => {
+      const measuredValue = Math.round(Number(value) * 100);
+      this.updateState(this.matter.clusterNames.TemperatureMeasurement, { measuredValue: measuredValue }, partId);
+    },
+    relativeHumidityMeasurement: (value, partId?: string) => {
+      const measuredValue = Math.round(Number(value) * 100);
+      this.updateState(this.matter.clusterNames.RelativeHumidityMeasurement, { measuredValue: measuredValue }, partId);
     },
   };
 
@@ -88,7 +96,7 @@ export class ValueMapper {
       throw new Error(`No value mapper registered for cluster: ${cluster}`);
     }
     if (value !== undefined) {
-      mapper(value);
+      mapper(value, partId);
     }
   }
 

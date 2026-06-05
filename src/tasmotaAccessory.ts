@@ -1,8 +1,8 @@
 import type { Logger, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
 import type { Device, DeviceConfiguration, TasmotaCommand } from './tasmotaTypes';
-import { DEVICE_TYPES } from './tasmotaTypes';
-import { ValueMapper } from './valueMapper';
+import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
+import { TypeMapper } from './typeMapper';
 
 type TemplateVariables = { [key: string]: string };
 
@@ -13,7 +13,7 @@ const RETRY_TIMEOUT = 30000;
 export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly log: Logger;
   private readonly mqtt: MQTTClient;
-  private readonly valueMapper: ValueMapper;
+  private readonly typeMapper: TypeMapper;
   private readonly logUnexpected?: boolean;
   private readonly variables: TemplateVariables;
 
@@ -37,7 +37,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
 
     this.log = cfg.log;
     this.mqtt = cfg.mqtt;
-    this.valueMapper = new ValueMapper(cfg);
+    this.typeMapper = new TypeMapper(cfg);
     this.logUnexpected = cfg.logUnexpected;
     this.variables = {
       deviceName: cfg.device.name,
@@ -48,11 +48,15 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       zIdx: idxValid ? String(idxNum - 1) : '',
     };
 
+    if (cfg.device.type === 'SENSOR') {
+      this.configureSensors(cfg);
+    } else {
+      this.configure(cfg);
+    }
+
     if (!cfg.deviceType) {
       throw new Error('Incorrect device type!');
     }
-
-    this.configure(cfg);
 
     this.UUID = cfg.uuid;
     this.displayName = cfg.device.name;
@@ -78,7 +82,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
       return cfg.mqtt.getValueByPath(response, path || property);
     } catch (err) {
-      throw `Error reading property ${property} from ${topic}: ${err}`;
+      throw new Error(`Error reading property ${property} from ${topic}: ${err}`);
     }
   }
 
@@ -86,62 +90,57 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const retriesCount = retries ?? 0;
     try {
       cfg.serialNumber ??=
-        await TasmotaAccessory.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5') ?? cfg.uuid.replace(/-/g, '');
+        await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5') ?? cfg.uuid.replace(/-/g, '');
       cfg.manufacturer ??=
-        await TasmotaAccessory.getProperty(cfg, 'MODULE0', 'Module.0') ?? 'Tasmota';
+        await this.getProperty(cfg, 'MODULE0', 'Module.0') ?? 'Tasmota';
       cfg.model ??=
-        await TasmotaAccessory.getProperty(cfg, 'Hostname') ?? 'Unknown';
+        await this.getProperty(cfg, 'Hostname') ?? 'Unknown';
       cfg.firmwareRevision ??=
-        (await TasmotaAccessory.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
-      cfg.deviceDefinition = DEVICE_TYPES[cfg.device.type];
-      if (cfg.deviceDefinition !== undefined) {
-        if (cfg.deviceDefinition.deviceType === 'GenericSwitch') {
-          cfg.deviceType = cfg.matter.deviceTypes.GenericSwitch.with(
-            cfg.matter.deviceTypes.GenericSwitch.requirements.SwitchServer,
-          );
-        } else {
-          cfg.deviceType = cfg.matter.deviceTypes[cfg.deviceDefinition.deviceType];
-        }
-        return new TasmotaAccessory(log, cfg);
-      } else {
-        log.error(`Unsupported device type: ${cfg.device.type}`);
+        (await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
+      if (cfg.device.type === 'SENSOR') {
+        cfg.sensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
       }
     } catch (err) {
       if (cfg.logTimeouts) {
-        log.warn(`${cfg.device.name}: error configuring accessory information (${retriesCount + 1}) : ${err}`);
+        cfg.log.warn(`${cfg.device.name}: error configuring accessory information (${retriesCount + 1}): ${err}`);
       }
       if (retriesCount < 2) {
         await new Promise(resolve => setTimeout(resolve, RETRY_TIMEOUT));
-        return TasmotaAccessory.create(log, cfg, retriesCount + 1);
+        return this.create(cfg, retriesCount + 1);
       }
+      return undefined;
+    }
+    try {
+      return new TasmotaAccessory(cfg);
+    } catch (err) {
+      cfg.log.error(`Device of type ${cfg.device.type} not created: ${err}`);
     }
   }
 
-  private configure(cfg: DeviceConfiguration, deviceDefinition?: TasmotaDeviceDefinition) {
-    deviceDefinition ??= cfg.deviceDefinition;
+  private configure(cfg: DeviceConfiguration) {
+    const deviceDefinition = DEVICE_TYPES[cfg.device.type];
     if (!deviceDefinition) {
       throw new Error('Incorrect device definition!');
     }
-    let configuredClusters = '';
+    cfg.deviceType = this.typeMapper.deviceType(deviceDefinition.deviceType);
+    const configuredClusters: string[] = [];
     cfg.clusters ??= deviceDefinition.clusters;
-    let first = true;
-    const handlers: Record<string, Record<string, (args: unknown) => Promise<void>>> = {};
+    const handlers: MatterAccessory<Device>['handlers'] = {};
     for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
       const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
       const label = `${cfg.device.name}:${clusterName}`;
-      configuredClusters += `${first ? '' : ', '}${clusterName}`;
-      first = false;
+      configuredClusters.push(clusterName);
       for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
         if (command === 'update') {
           const topic = this.replaceTemplate(tasmotaCommand.topic || '{stat}/RESULT');
           const path = this.replaceTemplate(tasmotaCommand.path || '');
           cfg.mqtt.subscribe(topic, message => {
             const value = cfg.mqtt.getValueByPath(message, path);
-            this.valueMapper.toMatter(value, clusterName);
+            this.typeMapper.toMatter(value, clusterName);
           });
         } else {
           clusterHandlers[command] = async (args) => {
-            const value = this.valueMapper.fromMatter(args, clusterName);
+            const value = this.typeMapper.fromMatter(args, clusterName);
             await this.handle(`${label}:${command}`, tasmotaCommand, value);
           };
         }
@@ -154,13 +153,68 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       cfg.handlers = handlers;
     }
 
-    this.log.debug(`${cfg.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters} cluster(s)`);
+    this.log.debug(`${cfg.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters.join(', ')} cluster(s)`);
   }
 
   private replaceTemplate(template: string, value?: string): string {
     return template.replace(/\{(.*?)\}/g, (_, key) => {
       return (key === 'value' ? value : String(this.variables[key])) ?? '';
     });
+  }
+
+  private findPath(obj: unknown, targetKey: string, path = ''): string | undefined {
+    if (obj === null || typeof obj !== 'object') {
+      return undefined;
+    }
+    for (const [key, value] of Object.entries(obj)) {
+      const newPath = path ? `${path}.${key}` : key;
+      if (key === targetKey) {
+        return newPath;
+      }
+      const result = this.findPath(value, targetKey, newPath);
+      if (result) {
+        return result;
+      }
+    }
+  }
+
+  private configureSensors(cfg: DeviceConfiguration) {
+    const sensors = JSON.parse(cfg.sensors || '');
+    if (sensors === undefined) {
+      throw new Error('Unable to parse sensors informtaion');
+    }
+    const parts: MatterAccessory<Device>['parts'] = [];
+    for (const [sensorType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
+      const path = this.findPath(sensors, sensorType);
+      if (path) {
+        this.log.info(`${cfg.device.name}: Added ${sensorType} sensor`);
+        const partId = `${sensorType}Sensor`;
+        const sensor = {
+          id: partId,
+          displayName: sensorType,
+          deviceType: this.typeMapper.deviceType(sensorDefinition.deviceType),
+          clusters: sensorDefinition.clusters!,
+        };
+        parts.push(sensor);
+        for (const [clusterName, clusterCommands] of Object.entries(sensorDefinition.handlers as object)) {
+          for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
+            if (command === 'update') {
+              const topic = this.replaceTemplate(tasmotaCommand.topic || '{sensor}');
+              cfg.mqtt.subscribe(topic, message => {
+                const value = cfg.mqtt.getValueByPath(message, path);
+                this.typeMapper.toMatter(value, clusterName, partId);
+              });
+            }
+          }
+        }
+      }
+    }
+    if (parts.length > 0) {
+      cfg.deviceType = cfg.matter.deviceTypes.BridgedNode;
+      cfg.parts = parts;
+    } else {
+      throw new Error('No sensors found');
+    }
   }
 
   private async handle(label: string, command: TasmotaCommand, value?: string): Promise<string> {
@@ -189,7 +243,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       });
       return response;
     } catch (err) {
-      throw `${label} Command "${reqTopic} ${message}: ${err}`;
+      throw new Error(`${label} Command "${reqTopic} ${message}: ${err}`);
     }
   }
 
