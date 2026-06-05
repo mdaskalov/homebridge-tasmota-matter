@@ -67,6 +67,7 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
         this.configuredAccessories.delete(uuid);
       }
       const deviceConfiguration: DeviceConfiguration = {
+        log: this.log,
         matter: this.matter,
         mqtt: this.mqttClient,
         uuid,
@@ -80,7 +81,7 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
         hardwareRevision: restoredAccessory?.hardwareRevision,
         clusters: restoredAccessory?.clusters,
       };
-      const tasmotaInstance = await TasmotaAccessory.create(this.log, deviceConfiguration);
+      const tasmotaInstance = await TasmotaAccessory.create(deviceConfiguration);
       if (tasmotaInstance) {
         this.activeAccessories.set(uuid, tasmotaInstance);
         await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [tasmotaInstance.toAccessory()]);

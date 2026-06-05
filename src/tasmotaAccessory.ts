@@ -31,13 +31,13 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   public readonly handlers?: MatterAccessory<Device>['handlers'];
   public readonly parts?: MatterAccessory<Device>['parts'];
 
-  private constructor(log: Logger, cfg: DeviceConfiguration) {
+  private constructor(cfg: DeviceConfiguration) {
     const idxNum = Number(cfg.device.index);
     const idxValid = !isNaN(idxNum);
 
-    this.log = log;
+    this.log = cfg.log;
     this.mqtt = cfg.mqtt;
-    this.valueMapper = new ValueMapper(log, cfg);
+    this.valueMapper = new ValueMapper(cfg);
     this.logUnexpected = cfg.logUnexpected;
     this.variables = {
       deviceName: cfg.device.name,
@@ -82,7 +82,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
-  static async create(log: Logger, cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
+  static async create(cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
     const retriesCount = retries ?? 0;
     try {
       cfg.serialNumber ??=
