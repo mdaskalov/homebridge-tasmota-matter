@@ -1,6 +1,10 @@
 import type { Logger, MatterAPI, ClusterStateMap, EndpointType } from 'homebridge';
 import type { DeviceConfiguration } from './tasmotaTypes';
 
+type EndpointMappers = {
+  [deviceType: string]: () => EndpointType;
+};
+
 type ClusterMappers = {
   [K in keyof ClusterStateMap]?: (value: string | undefined, partId?: string) => void;
 };
@@ -14,27 +18,19 @@ export class TypeMapper {
   private readonly uuid: string;
   private readonly matter: MatterAPI;
 
-  constructor(cfg: DeviceConfiguration) {
-    this.log = cfg.log;
-    this.uuid = cfg.uuid;
-    this.matter = cfg.matter;
-  }
-
-  async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>, partId?: string) {
-    await this.matter.updateAccessoryState(this.uuid, cluster, attributes, partId);
-  }
-
-  private async emitGesture(value?: string, position: number = 1, partId?: string) {
-    if (value === 'SINGLE') {
-      await this.matter.switch.emitGesture(this.uuid, 'singlePress', { position, partId });
-    } else if (value === 'DOUBLE') {
-      await this.matter.switch.emitGesture(this.uuid, 'doublePress', { position, partId });
-    } else if (value === 'HOLD') {
-      await this.matter.switch.emit(this.uuid, 'press', { position, partId });
-    } else if (value === 'CLEAR') {
-      await this.matter.switch.emit(this.uuid, 'release', { partId });
-    }
-  }
+  private readonly endpointMappers: EndpointMappers = {
+    GenericSwitch: () => this.matter.deviceTypes.GenericSwitch.with(
+      this.matter.deviceTypes.GenericSwitch.requirements.server.mandatory.Switch.with(
+        'MomentarySwitch', 'MomentarySwitchRelease', 'MomentarySwitchLongPress', 'MomentarySwitchMultiPress',
+      ),
+    ),
+    TemperatureSensor: () => this.matter.deviceTypes.TemperatureSensor.with(
+      this.matter.deviceTypes.TemperatureSensor.requirements.server.mandatory.TemperatureMeasurement,
+    ),
+    HumiditySensor: () => this.matter.deviceTypes.HumiditySensor.with(
+      this.matter.deviceTypes.HumiditySensor.requirements.server.mandatory.RelativeHumidityMeasurement,
+    ),
+  };
 
   private readonly mappers: ClusterMappers = {
     onOff: (value, partId?: string) => {
@@ -71,22 +67,38 @@ export class TypeMapper {
     },
   };
 
-  deviceType(deviceType: string): EndpointType {
-    if (deviceType === 'GenericSwitch') {
-      return this.matter.deviceTypes.GenericSwitch.with(
-        this.matter.deviceTypes.GenericSwitch.requirements.server.mandatory.Switch,
-      );
-    } else if (deviceType === 'TemperatureSensor') {
-      return this.matter.deviceTypes.TemperatureSensor.with(
-        this.matter.deviceTypes.TemperatureSensor.requirements.server.mandatory.TemperatureMeasurement,
-      );
-    } else if (deviceType === 'HumiditySensor') {
-      return this.matter.deviceTypes.HumiditySensor.with(
-        this.matter.deviceTypes.HumiditySensor.requirements.server.mandatory.RelativeHumidityMeasurement,
-      );
-    } else {
-      return this.matter.deviceTypes[deviceType];
+  constructor(cfg: DeviceConfiguration) {
+    this.log = cfg.log;
+    this.uuid = cfg.uuid;
+    this.matter = cfg.matter;
+  }
+
+  async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>, partId?: string) {
+    await this.matter.updateAccessoryState(this.uuid, cluster, attributes, partId);
+  }
+
+  private async emitGesture(value?: string, position: number = 1, partId?: string) {
+    if (value === 'ON') {
+      await this.matter.switch.emitGesture(this.uuid, 'singlePress', { position, partId });
+    } else if (value === 'OFF') {
+      await this.matter.switch.emitGesture(this.uuid, 'doublePress', { position, partId });
+    } else if (value === 'SINGLE') {
+      await this.matter.switch.emitGesture(this.uuid, 'singlePress', { position, partId });
+    } else if (value === 'DOUBLE') {
+      await this.matter.switch.emitGesture(this.uuid, 'doublePress', { position, partId });
+    } else if (value === 'HOLD') {
+      await this.matter.switch.emit(this.uuid, 'press', { position, partId });
+    } else if (value === 'CLEAR') {
+      await this.matter.switch.emit(this.uuid, 'release', { partId });
     }
+  }
+
+  deviceType(deviceType: string): EndpointType {
+    const endpointMapper = this.endpointMappers[deviceType];
+    if (endpointMapper) {
+      return endpointMapper();
+    }
+    return this.matter.deviceTypes[deviceType];
   }
 
   toMatter<K extends keyof ClusterStateMap>(value: string | undefined, cluster: string, partId?: string) {
