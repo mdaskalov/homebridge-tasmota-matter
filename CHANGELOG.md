@@ -2,6 +2,11 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.10
+- Cleanup MQTT client
+- Added device variables and template exapand
+- Added Dimmable Light using PWM channel (`LIGHTBULB_B_CH`)
+
 ## v0.0.9
 - Added contact sensor
 - Added automatic sensor detection (`SENSOR` type)
