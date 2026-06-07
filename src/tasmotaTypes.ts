@@ -109,6 +109,31 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
     },
   },
+  LIGHTBULB_B_CH: {
+    deviceType: 'DimmableLight',
+    clusters: {
+      onOff: {
+        onOff: false,
+      },
+      levelControl: {
+        currentLevel: 254,
+        minLevel: 1,
+        maxLevel: 254,
+      },
+    },
+    handlers: {
+      onOff: {
+        update: { path: 'POWER{idx}' },
+        on: { cmd: 'POWER{idx} ON' },
+        off: { cmd: 'POWER{idx} OFF' },
+      },
+      levelControl: {
+        update: { path: 'Channel{idx}' },
+        moveToLevel: { cmd: 'Channel{idx} {value}' },
+        moveToLevelWithOnOff: { cmd: 'Channel{idx} {value}' },
+      },
+    },
+  },
   BUTTON: {
     deviceType: 'GenericSwitch',
     clusters: {
