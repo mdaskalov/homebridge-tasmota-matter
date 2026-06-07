@@ -3,8 +3,7 @@ import type { MQTTClient } from './mqttClient';
 import type { Device, DeviceConfiguration, TasmotaCommand } from './tasmotaTypes';
 import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
 import { TypeMapper } from './typeMapper';
-
-type TemplateVariables = { [key: string]: string };
+import { Variables } from './variables';
 
 const READ_TIMEOUT = 1000;
 const EXEC_TIMEOUT = 1000;
@@ -15,7 +14,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly mqtt: MQTTClient;
   private readonly typeMapper: TypeMapper;
   private readonly logUnexpected?: boolean;
-  private readonly variables: TemplateVariables;
+  private readonly variables: Variables;
 
   // Required MatterAccessory properties
   public readonly UUID: string;
@@ -32,21 +31,11 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   public readonly parts?: MatterAccessory<Device>['parts'];
 
   private constructor(cfg: DeviceConfiguration) {
-    const idxNum = Number(cfg.device.index);
-    const idxValid = !isNaN(idxNum);
-
     this.log = cfg.log;
     this.mqtt = cfg.mqtt;
     this.typeMapper = new TypeMapper(cfg);
     this.logUnexpected = cfg.logUnexpected;
-    this.variables = {
-      deviceName: cfg.device.name,
-      topic: cfg.device.topic,
-      stat: 'stat/' + cfg.device.topic,
-      sensor: 'tele/' + cfg.device.topic + '/SENSOR',
-      idx: idxValid ? String(idxNum) : '',
-      zIdx: idxValid ? String(idxNum - 1) : '',
-    };
+    this.variables = new Variables(cfg.device);
 
     if (cfg.device.type === 'SENSOR') {
       this.configureSensors(cfg);
@@ -80,7 +69,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const resTopic = `stat/${topic}/${res || 'RESULT'}`;
     try {
       const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
-      return cfg.mqtt.getValueByPath(response, path || property);
+      return Variables.getValueByPath(response, path || property);
     } catch (err) {
       throw new Error(`Error reading property ${property} from ${topic}: ${err}`);
     }
@@ -132,10 +121,10 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       configuredClusters.push(clusterName);
       for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
         if (command === 'update') {
-          const topic = this.replaceTemplate(tasmotaCommand.topic || '{stat}/RESULT');
-          const path = this.replaceTemplate(tasmotaCommand.path || '');
+          const topic = this.variables.expand(tasmotaCommand.topic || '{stat}/RESULT');
+          const path = this.variables.expand(tasmotaCommand.path || '');
           cfg.mqtt.subscribe(topic, message => {
-            const value = cfg.mqtt.getValueByPath(message, path);
+            const value = Variables.getValueByPath(message, path);
             this.typeMapper.toMatter(value, clusterName);
           });
         } else {
@@ -156,28 +145,6 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.log.debug(`${cfg.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters.join(', ')} cluster(s)`);
   }
 
-  private replaceTemplate(template: string, value?: string): string {
-    return template.replace(/\{(.*?)\}/g, (_, key) => {
-      return (key === 'value' ? value : String(this.variables[key])) ?? '';
-    });
-  }
-
-  private findPath(obj: unknown, targetKey: string, path = ''): string | undefined {
-    if (obj === null || typeof obj !== 'object') {
-      return undefined;
-    }
-    for (const [key, value] of Object.entries(obj)) {
-      const newPath = path ? `${path}.${key}` : key;
-      if (key === targetKey) {
-        return newPath;
-      }
-      const result = this.findPath(value, targetKey, newPath);
-      if (result) {
-        return result;
-      }
-    }
-  }
-
   private configureSensors(cfg: DeviceConfiguration) {
     const sensors = JSON.parse(cfg.sensors || '');
     if (sensors === undefined) {
@@ -185,7 +152,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
     const parts: MatterAccessory<Device>['parts'] = [];
     for (const [sensorType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
-      const path = this.findPath(sensors, sensorType);
+      const path = this.variables.findPath(sensors, sensorType);
       if (path) {
         this.log.info(`${cfg.device.name}: Added ${sensorType} sensor`);
         const partId = `${sensorType}Sensor`;
@@ -199,9 +166,9 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         for (const [clusterName, clusterCommands] of Object.entries(sensorDefinition.handlers as object)) {
           for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
             if (command === 'update') {
-              const topic = this.replaceTemplate(tasmotaCommand.topic || '{sensor}');
+              const topic = this.variables.expand(tasmotaCommand.topic || '{sensor}');
               cfg.mqtt.subscribe(topic, message => {
-                const value = cfg.mqtt.getValueByPath(message, path);
+                const value = Variables.getValueByPath(message, path);
                 this.typeMapper.toMatter(value, clusterName, partId);
               });
             }
@@ -218,15 +185,15 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   }
 
   private async handle(label: string, command: TasmotaCommand, value?: string): Promise<string> {
-    const [cmd, ...other] = this.replaceTemplate(command.cmd, value).split(' ');
-    const message = this.replaceTemplate(other.join(' ') || '', value);
+    const [cmd, ...other] = this.variables.expand(command.cmd, value).split(' ');
+    const message = this.variables.expand(other.join(' ') || '', value);
     const reqTopic = `cmnd/${this.context.topic}/${cmd}`;
-    const resTopic = this.replaceTemplate(command.res?.topic || '{stat}/RESULT', value);
-    const path = this.replaceTemplate(command.res?.path || cmd, value);
+    const resTopic = this.variables.expand(command.res?.topic || '{stat}/RESULT', value);
+    const path = this.variables.expand(command.res?.path || cmd, value);
     try {
       let response = '';
       await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, (message) => {
-        const res = this.mqtt.getValueByPath(message, path);
+        const res = Variables.getValueByPath(message, path);
         if (res === undefined) {
           const msg = `${label} :- expecting ${path}, ignored: ${message}`;
           if (this.logUnexpected === true) {

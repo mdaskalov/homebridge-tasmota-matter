@@ -80,41 +80,7 @@ export class MQTTClient {
     return false;
   }
 
-  getByPath(obj: unknown, path: string): unknown {
-    return path
-      .replace(/\[(\d+)\]/g, '.$1')   // normalize [0] → .0
-      .split('.')
-      .filter(Boolean)
-      .reduce((acc, key) => {
-        if (acc === null || typeof acc !== 'object' || !Object.prototype.hasOwnProperty.call(acc, key)) {
-          return undefined;
-        }
-        return (acc as Record<string, unknown>)[key];
-      }, obj);
-  }
-
-  getValueByPath(json: string, path: string): string | undefined {
-    try {
-      const obj = JSON.parse(json);
-      const val = this.getByPath(obj, path);
-      if (val === undefined || val === null) {
-        return undefined;
-      }
-      return typeof val === 'object' ? JSON.stringify(val) : String(val);
-    } catch {
-      return undefined;
-    }
-  }
-
-  uniqueID(): string {
-    const timestamp = Date.now();
-    if (this.idCounter >= MAX_COUNTER) {
-      this.idCounter = 0;
-    }
-    return `${timestamp}-${this.idCounter++}`;
-  }
-
-  handersCount(topic: string): { handlersCount: number, prioHandlersCount } {
+  handlersCount(topic: string): { handlersCount: number, prioHandlersCount: number } {
     const prioHandlersCount = this.prioHandlers.filter(h => this.matchTopic(h, topic)).length;
     const handlersCount = prioHandlersCount + this.handlers.filter(h => this.matchTopic(h, topic)).length;
     return { handlersCount, prioHandlersCount };
