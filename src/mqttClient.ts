@@ -13,14 +13,10 @@ type TopicHandler = {
   callback: TopicCallback;
 };
 
-const DEFALT_TIMEOUT = 5000;
-const MAX_COUNTER = 2147483647; // 2^31 - 1
-
 export class MQTTClient {
   private prioHandlers: TopicHandler[] = [];
   private handlers: TopicHandler[] = [];
   private client: MqttClient;
-  private idCounter = 0;
 
   constructor(private log: Logger, private config: PlatformConfig) {
     const broker = config.mqttBroker || 'localhost';
@@ -63,7 +59,8 @@ export class MQTTClient {
 
   shutdown() {
     this.log.debug('MQTT: Shutdown. Remove all handlers');
-    for (const handler of this.handlers.concat(this.prioHandlers)) {
+    const handlers = [...this.handlers, ...this.prioHandlers];
+    for (const handler of handlers) {
       this.unsubscribe(handler.id);
     }
     if (this.client) {
@@ -125,14 +122,14 @@ export class MQTTClient {
 
   subscribe(topic: string, callback: TopicCallback, priority = false): string | undefined {
     if (this.client) {
-      const id = this.uniqueID();
+      const id = crypto.randomUUID();
       const handler: TopicHandler = { id, topic, callback };
       if (priority) {
         this.prioHandlers.push(handler);
       } else {
         this.handlers.push(handler);
       }
-      const { prioHandlersCount, handlersCount } = this.handersCount(topic);
+      const { prioHandlersCount, handlersCount } = this.handlersCount(topic);
       if (handlersCount === 1) {
         this.log.debug('MQTT: Subscribed topic: %s, %s: %s, handler(s): %d (%d prio)',
           topic,
@@ -169,7 +166,7 @@ export class MQTTClient {
       } else {
         this.handlers = this.handlers.filter((h => h.id !== id));
       }
-      const { prioHandlersCount, handlersCount } = this.handersCount(handler.topic);
+      const { prioHandlersCount, handlersCount } = this.handlersCount(handler.topic);
       if (handlersCount === 0) {
         this.client.unsubscribe(handler.topic);
         this.log.debug('MQTT: Unubscribed topic: %s, %s: %s, handler(s): %d (%d prio)',
@@ -198,31 +195,44 @@ export class MQTTClient {
     this.log.debug('MQTT: Published: %s %s', topic, message);
   }
 
-  read(reqTopic: string, message?: string, resTopic = reqTopic, timeout: number = DEFALT_TIMEOUT, callback?: ReadCallback) {
+  read(reqTopic: string, message?: string, resTopic = reqTopic, timeout: number = 5000, callback?: ReadCallback) {
     return new Promise((resolve: (msg: string) => void, reject: (err: string) => void) => {
       const start = Date.now();
-      let timeoutTimer: NodeJS.Timeout | undefined = undefined;
-      let handlerId: string | undefined = undefined;
-      handlerId = this.subscribe(resTopic, message => {
-        const cbResponse = callback !== undefined ? callback(message) : true; // consume
-        if (cbResponse !== false) { // ignore
-          if (timeoutTimer !== undefined) {
-            clearTimeout(timeoutTimer);
-          }
-          if (handlerId !== undefined) {
-            this.unsubscribe(handlerId);
-          }
-          resolve(message);
+      let timeoutTimer: NodeJS.Timeout | undefined;
+      let handlerId: string | undefined;
+
+      const cleanup = () => {
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = undefined;
+        };
+        if (handlerId) {
+          this.unsubscribe(handlerId);
+          handlerId = undefined;
+        }
+      };
+
+      handlerId = this.subscribe(resTopic, msg => {
+        let cbResponse: boolean | void;
+        try {
+          cbResponse = callback !== undefined ? callback(msg) : true;
+        } catch (err) {
+          cleanup();
+          reject(`MQTT: Callback error: ${err}`);
+          return true; // consume
+        }
+        if (cbResponse !== false) {
+          cleanup();
+          resolve(msg);
         }
         return cbResponse;
       }, true);
       timeoutTimer = setTimeout(() => {
-        if (handlerId !== undefined) {
-          this.unsubscribe(handlerId);
-        }
         const elapsed = Date.now() - start;
+        cleanup();
         reject(`MQTT: Read timeout after ${elapsed}ms`);
       }, timeout);
+
       if (message !== undefined) {
         this.publish(reqTopic, message);
       }
