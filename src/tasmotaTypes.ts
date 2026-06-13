@@ -1,4 +1,4 @@
-import type { Logger, EndpointType, MatterAccessory, MatterAPI } from 'homebridge';
+import type { Logger, MatterAccessory, MatterAPI } from 'homebridge';
 import { MQTTClient } from './mqttClient';
 
 export type Device = {
@@ -22,12 +22,7 @@ export type DeviceConfiguration = {
   model?: string;
   firmwareRevision?: string;
   hardwareRevision?: string;
-  deviceDefinition?: TasmotaDeviceDefinition;
-  sensors?: string;
-  deviceType?: EndpointType;
-  clusters?: MatterAccessory<Device>['clusters'];
-  handlers?: MatterAccessory<Device>['handlers'];
-  parts?: MatterAccessory<Device>['parts'];
+  deviceSensors?: string;
 };
 
 export type TasmotaResponse = {

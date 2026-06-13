@@ -93,7 +93,7 @@ export class TypeMapper {
     }
   }
 
-  deviceType(deviceType: string): EndpointType {
+  toEndpointType(deviceType: string): EndpointType {
     const endpointMapper = this.endpointMappers[deviceType];
     if (endpointMapper) {
       return endpointMapper();

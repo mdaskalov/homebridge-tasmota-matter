@@ -9,6 +9,15 @@ const READ_TIMEOUT = 1000;
 const EXEC_TIMEOUT = 1000;
 const RETRY_TIMEOUT = 30000;
 
+interface AccessoryConfig {
+  displayName: string;
+  deviceType: EndpointType;
+  context: Device;
+  clusters: MatterAccessory<Device>['clusters'];
+  handlers: MatterAccessory<Device>['handlers'];
+  parts: MatterAccessory<Device>['parts'];
+}
+
 export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly log: Logger;
   private readonly mqtt: MQTTClient;
@@ -37,28 +46,20 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.logUnexpected = cfg.logUnexpected;
     this.variables = new Variables(cfg.device);
 
-    if (cfg.device.type === 'SENSOR') {
-      this.configureSensors(cfg);
-    } else {
-      this.configure(cfg);
-    }
-
-    if (!cfg.deviceType) {
-      throw new Error('Incorrect device type!');
-    }
+    const accessoryConfig = this.configure(cfg);
 
     this.UUID = cfg.uuid;
-    this.displayName = cfg.device.name;
-    this.deviceType = cfg.deviceType;
+    this.displayName = accessoryConfig.displayName;
+    this.deviceType = accessoryConfig.deviceType;
     this.serialNumber = cfg.serialNumber ?? 'Unknown';
     this.manufacturer = cfg.manufacturer ?? 'Unknown';
     this.model = cfg.model ?? 'Unknown';
     this.firmwareRevision = cfg.firmwareRevision ?? 'Unknown';
     this.hardwareRevision = '1.0';
-    this.context = cfg.device;
-    this.clusters = cfg.clusters;
-    this.handlers = cfg.handlers;
-    this.parts = cfg.parts;
+    this.context = accessoryConfig.context;
+    this.clusters = accessoryConfig.clusters;
+    this.handlers = accessoryConfig.handlers;
+    this.parts = accessoryConfig.parts;
   }
 
   static async getProperty(cfg: DeviceConfiguration, property: string, path?: string, res?: string): Promise<string | undefined> {
@@ -87,7 +88,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       cfg.firmwareRevision ??=
         (await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
       if (cfg.device.type === 'SENSOR') {
-        cfg.sensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
+        cfg.deviceSensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
       }
     } catch (err) {
       if (cfg.logTimeouts) {
@@ -106,14 +107,15 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
-  private configure(cfg: DeviceConfiguration) {
+  private configure(cfg: DeviceConfiguration): AccessoryConfig {
+    if (cfg.device.type === 'SENSOR') {
+      return this.configureSensors(cfg);
+    }
     const deviceDefinition = DEVICE_TYPES[cfg.device.type];
     if (!deviceDefinition) {
       throw new Error('Incorrect device definition!');
     }
-    cfg.deviceType = this.typeMapper.deviceType(deviceDefinition.deviceType);
     const configuredClusters: string[] = [];
-    cfg.clusters ??= deviceDefinition.clusters;
     const handlers: MatterAccessory<Device>['handlers'] = {};
     for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
       const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
@@ -138,28 +140,33 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         handlers[clusterName] = clusterHandlers;
       }
     }
-    if (Object.keys(handlers).length > 0) {
-      cfg.handlers = handlers;
-    }
 
     this.log.debug(`${cfg.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters.join(', ')} cluster(s)`);
+    return {
+      displayName: cfg.device.name,
+      deviceType: this.typeMapper.toEndpointType(deviceDefinition.deviceType),
+      context: cfg.device,
+      clusters: deviceDefinition.clusters,
+      handlers: Object.keys(handlers).length > 0 ? handlers : undefined,
+      parts: undefined,
+    };
   }
 
-  private configureSensors(cfg: DeviceConfiguration) {
-    const sensors = JSON.parse(cfg.sensors || '');
-    if (sensors === undefined) {
+  private configureSensors(cfg: DeviceConfiguration): AccessoryConfig {
+    const deviceSensors = JSON.parse(cfg.deviceSensors || '');
+    if (deviceSensors === undefined) {
       throw new Error('Unable to parse sensors informtaion');
     }
     const parts: MatterAccessory<Device>['parts'] = [];
     for (const [sensorType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
-      const path = this.variables.findPath(sensors, sensorType);
+      const path = this.variables.findPath(deviceSensors, sensorType);
       if (path) {
         this.log.info(`${cfg.device.name}: Added ${sensorType} sensor`);
         const partId = `${sensorType}Sensor`;
         const sensor = {
           id: partId,
           displayName: sensorType,
-          deviceType: this.typeMapper.deviceType(sensorDefinition.deviceType),
+          deviceType: this.typeMapper.toEndpointType(sensorDefinition.deviceType),
           clusters: sensorDefinition.clusters!,
         };
         parts.push(sensor);
@@ -176,12 +183,17 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         }
       }
     }
-    if (parts.length > 0) {
-      cfg.deviceType = cfg.matter.deviceTypes.BridgedNode;
-      cfg.parts = parts;
-    } else {
+    if (parts.length === 0) {
       throw new Error('No sensors found');
     }
+    return {
+      displayName: cfg.device.name,
+      deviceType: cfg.matter.deviceTypes.BridgedNode,
+      context: cfg.device,
+      clusters: undefined,
+      handlers: undefined,
+      parts: parts,
+    };
   }
 
   private async handle(label: string, command: TasmotaCommand, value?: string): Promise<string> {
