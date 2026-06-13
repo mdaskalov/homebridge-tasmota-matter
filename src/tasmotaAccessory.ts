@@ -1,6 +1,6 @@
 import type { Logger, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
-import type { Device, DeviceConfiguration, TasmotaCommand } from './tasmotaTypes';
+import type { Device, DeviceConfiguration, TasmotaCommand, TasmotaResponse } from './tasmotaTypes';
 import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
 import { TypeMapper } from './typeMapper';
 import { Variables } from './variables';
@@ -117,22 +117,26 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
     const configuredClusters: string[] = [];
     const handlers: MatterAccessory<Device>['handlers'] = {};
-    for (const [clusterName, clusterCommands] of Object.entries(deviceDefinition.handlers as object)) {
+    for (const [clusterName, clusterHandlerMap] of Object.entries(deviceDefinition.handlers ?? {})) {
       const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
       const label = `${cfg.device.name}:${clusterName}`;
       configuredClusters.push(clusterName);
-      for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
+      for (const [command, commandDefinition] of Object.entries(clusterHandlerMap)) {
         if (command === 'update') {
-          const topic = this.variables.expand(tasmotaCommand.topic || '{stat}/RESULT');
-          const path = this.variables.expand(tasmotaCommand.path || '');
+          const tasmotaResponse = commandDefinition as TasmotaResponse;
+          const topic = this.variables.expand(tasmotaResponse.topic || '{stat}/RESULT');
+          const path = this.variables.expand(tasmotaResponse.path || '');
           cfg.mqtt.subscribe(topic, message => {
             const value = Variables.getValueByPath(message, path);
             this.typeMapper.toMatter(value, clusterName);
           });
         } else {
           clusterHandlers[command] = async (args) => {
-            const value = await this.typeMapper.fromMatter(args, clusterName, command);
-            await this.handle(`${label}:${command}`, tasmotaCommand, value);
+            const tasmotaCommand = commandDefinition as TasmotaCommand;
+            if (Object.keys(tasmotaCommand).length === 0) {
+              const value = await this.typeMapper.fromMatter(args, clusterName, command);
+              await this.handle(`${label}:${command}`, tasmotaCommand, value);
+            }
           };
         }
       }

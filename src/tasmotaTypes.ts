@@ -99,6 +99,7 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
       levelControl: {
         update: { path: 'Dimmer' },
+        moveToLevel: { cmd: 'Dimmer {value}' },
         moveToLevelWithOnOff: { cmd: 'Dimmer {value}' },
       },
     },
@@ -123,6 +124,7 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
       levelControl: {
         update: { path: 'Channel{idx}' },
+        moveToLevel: { cmd: 'Channel{idx} {value}' },
         moveToLevelWithOnOff: { cmd: 'Channel{idx} {value}' },
       },
     },
@@ -154,12 +156,13 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
       levelControl: {
         update: { path: 'Dimmer' },
+        moveToLevel: { cmd: 'Dimmer {value}' },
         moveToLevelWithOnOff: { cmd: 'Dimmer {value}' },
       },
       colorControl: {
         update: { path: 'CT' },
         moveToColorTemperatureLogic: { cmd: 'CT {value}', res: { path: 'CT' } },
-        stopAllColorMovement: { cmd: 'CT: 0' },
+        stopAllColorMovement: {},
       },
     },
   },
@@ -197,6 +200,7 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       colorControl: {
         update: { path: 'HSBColor' },
         moveToColorTemperatureLogic: { cmd: 'HSBColor', res: { path: 'HSBColor' } },
+        stopAllColorMovement: {},
       },
     },
   },
