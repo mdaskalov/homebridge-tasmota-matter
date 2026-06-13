@@ -133,7 +133,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         } else {
           clusterHandlers[command] = async (args) => {
             const tasmotaCommand = commandDefinition as TasmotaCommand;
-            if (Object.keys(tasmotaCommand).length === 0) {
+            if (Object.keys(tasmotaCommand).length > 0) {
               const value = await this.typeMapper.fromMatter(args, clusterName, command);
               await this.handle(`${label}:${command}`, tasmotaCommand, value);
             }
