@@ -122,6 +122,9 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       const label = `${cfg.device.name}:${clusterName}`;
       configuredClusters.push(clusterName);
       for (const [command, commandDefinition] of Object.entries(clusterHandlerMap)) {
+        if (Object.keys(commandDefinition).length === 0) {
+          continue;
+        }
         if (command === 'update') {
           const tasmotaResponse = commandDefinition as TasmotaResponse;
           const topic = this.variables.expand(tasmotaResponse.topic || '{stat}/RESULT');
@@ -133,10 +136,8 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         } else {
           clusterHandlers[command] = async (args) => {
             const tasmotaCommand = commandDefinition as TasmotaCommand;
-            if (Object.keys(tasmotaCommand).length > 0) {
-              const value = await this.typeMapper.fromMatter(args, clusterName, command);
-              await this.handle(`${label}:${command}`, tasmotaCommand, value);
-            }
+            const value = await this.typeMapper.fromMatter(args, clusterName, command);
+            await this.handle(`${label}:${command}`, tasmotaCommand, value);
           };
         }
       }
