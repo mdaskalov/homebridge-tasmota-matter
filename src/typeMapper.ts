@@ -1,4 +1,11 @@
-import type { Logger, MatterAPI, ClusterStateMap, EndpointType } from 'homebridge';
+import type {
+  Logger,
+  MatterAPI,
+  ClusterStateMap,
+  EndpointType,
+  ClusterHandlerMap as MatterClusterHandlerMap,
+  MatterCommandHandler,
+} from 'homebridge';
 import type { DeviceConfiguration } from './tasmotaTypes';
 
 type EndpointMappers = {
@@ -6,19 +13,84 @@ type EndpointMappers = {
 };
 
 type ClusterMappers = {
-  [K in keyof ClusterStateMap]?: (value: string | undefined, partId?: string) => void;
+  [K in keyof ClusterStateMap]?: (value: string, partId?: string) => void;
 };
 
 type ClusterUnmappers = {
-  [K in keyof ClusterStateMap]?: (attributes: unknown) => string;
+  [Cluster in keyof MatterClusterHandlerMap]?: {
+    [Command in keyof MatterClusterHandlerMap[Cluster]]?: (
+      attributes: MatterCommandAttributes<MatterClusterHandlerMap[Cluster][Command]>
+    ) => Promise<string | undefined> | string | undefined;
+  };
 };
+
+type MatterCommandAttributes<T> = NonNullable<T> extends MatterCommandHandler<infer Attributes>
+  ? Attributes
+  : never;
+
+type ValueRange = {
+  min: number;
+  max: number;
+};
+
+type ValueRangeMap = {
+  tasmota: ValueRange;
+  matter: ValueRange;
+};
+
+const VALUE_RANGES = {
+  brightness: {
+    tasmota: { min: 0, max: 100 },
+    matter: { min: 1, max: 254 },
+  },
+  colorTemperature: {
+    tasmota: { min: 153, max: 500 },
+    matter: { min: 147, max: 454 },
+  },
+  hue: {
+    tasmota: { min: 0, max: 360 },
+    matter: { min: 0, max: 254 },
+  },
+  saturation: {
+    tasmota: { min: 0, max: 100 },
+    matter: { min: 0, max: 254 },
+  },
+} as const satisfies Record<string, ValueRangeMap>;
 
 export class TypeMapper {
   private readonly log: Logger;
   private readonly uuid: string;
   private readonly matter: MatterAPI;
 
+  constructor(cfg: DeviceConfiguration) {
+    this.log = cfg.log;
+    this.uuid = cfg.uuid;
+    this.matter = cfg.matter;
+  }
+
+  private limitValue(value: number, range: ValueRange): number {
+    return Math.min(range.max, Math.max(range.min, value));
+  }
+
+  private convertValue(value: number, from: ValueRange, to: ValueRange): number {
+    const sourceValue = this.limitValue(value, from);
+    const ratio = (sourceValue - from.min) / (from.max - from.min);
+    return this.limitValue(Math.round(to.min + ratio * (to.max - to.min)), to);
+  }
+
+  private toMatterValue(value: string, ranges: ValueRangeMap): number {
+    return this.convertValue(Number(value), ranges.tasmota, ranges.matter);
+  }
+
+  private fromMatterValue(value: number, ranges: ValueRangeMap): number {
+    return this.convertValue(value, ranges.matter, ranges.tasmota);
+  }
+
   private readonly endpointMappers: EndpointMappers = {
+    ColorTemperatureLight: () => this.matter.deviceTypes.ColorTemperatureLight,
+    ExtendedColorLight: () => this.matter.deviceTypes.ExtendedColorLight.with(
+      this.matter.deviceTypes.ExtendedColorLight.requirements.server.mandatory.ColorControl.with('HueSaturation'),
+    ),
     GenericSwitch: () => this.matter.deviceTypes.GenericSwitch.with(
       this.matter.deviceTypes.GenericSwitch.requirements.server.mandatory.Switch.with(
         'MomentarySwitch', 'MomentarySwitchRelease', 'MomentarySwitchLongPress', 'MomentarySwitchMultiPress',
@@ -38,10 +110,15 @@ export class TypeMapper {
       this.updateState(this.matter.clusterNames.OnOff, { onOff }, partId);
     },
     levelControl: (value, partId?: string) => {
-      const currentLevel = Math.round((Number(value) / 100) * 254);
+      const currentLevel = this.toMatterValue(value, VALUE_RANGES.brightness);
       if (currentLevel !== 0) {
         this.updateState(this.matter.clusterNames.LevelControl, { currentLevel }, partId);
       }
+    },
+    colorControl: (value, partId?: string) => {
+      this.log.warn(`mapper: ${JSON.stringify(value)}.`);
+      const colorTemperatureMireds = this.toMatterValue(value, VALUE_RANGES.colorTemperature);
+      this.updateState(this.matter.clusterNames.ColorControl, { colorTemperatureMireds }, partId);
     },
     switch: (value) => {
       this.emitGesture(value);
@@ -61,19 +138,42 @@ export class TypeMapper {
   };
 
   private readonly unmappers: ClusterUnmappers = {
-    levelControl: (attrs) => {
-      const { level } = attrs as { level?: number };
-      return String(Math.round(((level ?? 0) / 254) * 100));
+    levelControl: {
+      moveToLevel: (attrs) => {
+        return String(this.fromMatterValue(attrs.level, VALUE_RANGES.brightness));
+      },
+      moveToLevelWithOnOff: (attrs) => {
+        return String(this.fromMatterValue(attrs.level, VALUE_RANGES.brightness));
+      },
+    },
+    colorControl: {
+      moveToColorTemperatureLogic: (attrs) => {
+        return String(this.fromMatterValue(attrs.colorTemperatureMireds, VALUE_RANGES.colorTemperature));
+      },
+      moveToColorLogic: (attrs) => {
+        const xFloat = (attrs.targetX / 65535).toFixed(4);
+        const yFloat = (attrs.targetY / 65535).toFixed(4);
+        this.log.info(`setting xy color to (${xFloat}, ${yFloat}).`);
+        return `${xFloat},${yFloat}`;
+      },
+      moveToHueAndSaturationLogic: async (attrs) => {
+        const levelControl = await this.matter.getAccessoryState(this.uuid, this.matter.clusterNames.LevelControl);
+        const hueDegrees = this.fromMatterValue(attrs.hue, VALUE_RANGES.hue);
+        const saturationPercent = this.fromMatterValue(attrs.saturation, VALUE_RANGES.saturation);
+        const brightnessPercent = this.fromMatterValue(levelControl?.currentLevel ?? 0, VALUE_RANGES.brightness);
+        this.log.info(`setting color HSBColor: ${hueDegrees},${saturationPercent},${brightnessPercent}.`);
+        return `${hueDegrees},${saturationPercent},${brightnessPercent}`;
+      },
+      moveToHueLogic: async (attrs) => {
+        return String(this.fromMatterValue(attrs.targetHue, VALUE_RANGES.hue));
+      },
+      moveToSaturationLogic: async (attrs) => {
+        return String(this.fromMatterValue(attrs.targetSaturation, VALUE_RANGES.saturation));
+      },
     },
   };
 
-  constructor(cfg: DeviceConfiguration) {
-    this.log = cfg.log;
-    this.uuid = cfg.uuid;
-    this.matter = cfg.matter;
-  }
-
-  async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>, partId?: string) {
+  private async updateState<K extends keyof ClusterStateMap>(cluster: K, attributes: Partial<ClusterStateMap[K]>, partId?: string) {
     await this.matter.updateAccessoryState(this.uuid, cluster, attributes, partId);
   }
 
@@ -101,8 +201,8 @@ export class TypeMapper {
     return this.matter.deviceTypes[deviceType];
   }
 
-  toMatter<K extends keyof ClusterStateMap>(value: string | undefined, cluster: string, partId?: string) {
-    const key = cluster as K;
+  toMatter(value: string | undefined, cluster: string, partId?: string) {
+    const key = cluster as keyof ClusterStateMap;
     const mapper = this.mappers[key];
     if (!mapper) {
       throw new Error(`No value mapper registered for cluster: ${cluster}`);
@@ -112,10 +212,13 @@ export class TypeMapper {
     }
   }
 
-  fromMatter(attributes: unknown, cluster: string): string | undefined {
-    const unmapper = this.unmappers[cluster as keyof ClusterStateMap];
+  async fromMatter(attributes: unknown, cluster: string, command: string): Promise<string | undefined> {
+    const clusterUnmappers = this.unmappers[cluster as keyof MatterClusterHandlerMap];
+    const unmapper = clusterUnmappers?.[command as keyof typeof clusterUnmappers] as
+      | ((attributes: unknown) => Promise<string | undefined> | string | undefined)
+      | undefined;
     if (unmapper) {
-      return unmapper(attributes);
+      return await unmapper(attributes);
     }
   }
 }

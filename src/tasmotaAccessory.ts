@@ -131,7 +131,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
           });
         } else {
           clusterHandlers[command] = async (args) => {
-            const value = this.typeMapper.fromMatter(args, clusterName);
+            const value = await this.typeMapper.fromMatter(args, clusterName, command);
             await this.handle(`${label}:${command}`, tasmotaCommand, value);
           };
         }
