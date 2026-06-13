@@ -109,6 +109,10 @@ export class TypeMapper {
       const onOff = (value === 'ON');
       this.updateState(this.matter.clusterNames.OnOff, { onOff }, partId);
     },
+    doorLock: (value, partId?: string) => {
+      const state = value === 'ON' ? 1 : 2;
+      this.updateState(this.matter.clusterNames.DoorLock, { lockState: state }, partId);
+    },
     levelControl: (value, partId?: string) => {
       const currentLevel = this.toMatterValue(value, VALUE_RANGES.brightness);
       if (currentLevel !== 0) {

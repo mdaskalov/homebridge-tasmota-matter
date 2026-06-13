@@ -245,6 +245,24 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
     },
   },
+  LOCK: {
+    deviceType: 'DoorLock',
+    clusters: {
+      doorLock: {
+        lockState: 2, // unlocked
+        lockType: 0, // DeadBolt
+        actuatorEnabled: true,
+        operatingMode: 0, // Normal
+      },
+    },
+    handlers: {
+      doorLock: {
+        update: { path: 'POWER{idx}' },
+        lockDoor: { cmd: 'POWER{idx} ON', res: { shared: true } },
+        unlockDoor: { cmd: 'POWER{idx} OFF', res: { shared: true } },
+      },
+    },
+  },
 };
 
 export const SENSOR_TYPES: Record<string, TasmotaDeviceDefinition> = {
