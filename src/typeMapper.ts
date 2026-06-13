@@ -116,7 +116,6 @@ export class TypeMapper {
       }
     },
     colorControl: (value, partId?: string) => {
-      this.log.warn(`mapper: ${JSON.stringify(value)}.`);
       const colorTemperatureMireds = this.toMatterValue(value, VALUE_RANGES.colorTemperature);
       this.updateState(this.matter.clusterNames.ColorControl, { colorTemperatureMireds }, partId);
     },
@@ -153,7 +152,6 @@ export class TypeMapper {
       moveToColorLogic: (attrs) => {
         const xFloat = (attrs.targetX / 65535).toFixed(4);
         const yFloat = (attrs.targetY / 65535).toFixed(4);
-        this.log.info(`setting xy color to (${xFloat}, ${yFloat}).`);
         return `${xFloat},${yFloat}`;
       },
       moveToHueAndSaturationLogic: async (attrs) => {
@@ -161,7 +159,6 @@ export class TypeMapper {
         const hueDegrees = this.fromMatterValue(attrs.hue, VALUE_RANGES.hue);
         const saturationPercent = this.fromMatterValue(attrs.saturation, VALUE_RANGES.saturation);
         const brightnessPercent = this.fromMatterValue(levelControl?.currentLevel ?? 0, VALUE_RANGES.brightness);
-        this.log.info(`setting color HSBColor: ${hueDegrees},${saturationPercent},${brightnessPercent}.`);
         return `${hueDegrees},${saturationPercent},${brightnessPercent}`;
       },
       moveToHueLogic: async (attrs) => {
