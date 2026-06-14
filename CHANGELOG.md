@@ -2,6 +2,13 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.11
+- Added water valve (not supported in Home)
+- Added door lock
+- Added lights with color control (work in progress)
+- Reworked type mappers
+- Optimized device initialization
+
 ## v0.0.10
 - Cleanup MQTT client
 - Added device variables and template exapand
