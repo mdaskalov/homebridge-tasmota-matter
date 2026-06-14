@@ -138,6 +138,10 @@ export class TypeMapper {
       const measuredValue = Math.round(Number(value) * 100);
       this.updateState(this.matter.clusterNames.RelativeHumidityMeasurement, { measuredValue: measuredValue }, partId);
     },
+    valveConfigurationAndControl: (value, partId?: string) => {
+      const currentState = value === 'ON' ? 1 : 0;
+      this.updateState(this.matter.clusterNames.ValveConfigurationAndControl, { currentState: currentState }, partId);
+    },
   };
 
   private readonly unmappers: ClusterUnmappers = {
@@ -170,6 +174,14 @@ export class TypeMapper {
       },
       moveToSaturationLogic: async (attrs) => {
         return String(this.fromMatterValue(attrs.targetSaturation, VALUE_RANGES.saturation));
+      },
+    },
+    valveConfigurationAndControl: {
+      open: async (attrs) => {
+        return attrs.targetLevel === 1 ? 'ON' : 'OFF';
+      },
+      close: async () => {
+        return 'OFF';
       },
     },
   };

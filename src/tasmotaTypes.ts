@@ -245,11 +245,29 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       },
     },
   },
+  VALVE: {
+    deviceType: 'WaterValve',
+    clusters: {
+      valveConfigurationAndControl: {
+        currentState: 0,      //Closed
+        targetState: 0,       // Closed
+        openDuration: null,
+        defaultOpenDuration: null,
+      },
+    },
+    handlers: {
+      valveConfigurationAndControl: {
+        update: { path: 'POWER{idx}' },
+        open: { cmd: 'POWER{idx} ON', res: { shared: true } },
+        close: { cmd: 'POWER{idx} OFF', res: { shared: true } },
+      },
+    },
+  },
   LOCK: {
     deviceType: 'DoorLock',
     clusters: {
       doorLock: {
-        lockState: 2, // unlocked
+        lockState: 2, // Unlocked
         lockType: 0, // DeadBolt
         actuatorEnabled: true,
         operatingMode: 0, // Normal
