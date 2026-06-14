@@ -127,8 +127,8 @@ export class TypeMapper {
       this.emitGesture(value);
     },
     booleanState: (value, partId?: string) => {
-      const isOpen = (value === 'ON');
-      this.updateState(this.matter.clusterNames.BooleanState, { stateValue: !isOpen }, partId);
+      const isTrue = (value === 'ON');
+      this.updateState(this.matter.clusterNames.BooleanState, { stateValue: isTrue }, partId);
     },
     temperatureMeasurement: (value, partId?: string) => {
       const measuredValue = Math.round(Number(value) * 100);
