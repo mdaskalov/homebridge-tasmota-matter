@@ -65,6 +65,18 @@ export class TypeMapper {
   private readonly matter: MatterAPI;
   private readonly variables: TemplateVariables;
 
+  private readonly endpointMappers: EndpointMappers = {
+    ColorTemperatureLight: () => this.matter.deviceTypes.ColorTemperatureLight,
+    ExtendedColorLight: () => this.matter.deviceTypes.ExtendedColorLight.with(
+      this.matter.deviceTypes.ExtendedColorLight.requirements.server.mandatory.ColorControl.with('HueSaturation'),
+    ),
+    GenericSwitch: () => this.matter.deviceTypes.GenericSwitch.with(
+      this.matter.deviceTypes.GenericSwitch.requirements.server.mandatory.Switch.with(
+        'MomentarySwitch', 'MomentarySwitchRelease', 'MomentarySwitchLongPress', 'MomentarySwitchMultiPress',
+      ),
+    ),
+  };
+
   private readonly clusterMappers: ClusterMappers = {
     onOff: async (value, partId?: string) => {
       const onOff = (value === 'ON');
@@ -151,18 +163,6 @@ export class TypeMapper {
         this.variables['onOff'] = 'OFF';
       },
     },
-  };
-
-  private readonly endpointMappers: EndpointMappers = {
-    ColorTemperatureLight: () => this.matter.deviceTypes.ColorTemperatureLight,
-    ExtendedColorLight: () => this.matter.deviceTypes.ExtendedColorLight.with(
-      this.matter.deviceTypes.ExtendedColorLight.requirements.server.mandatory.ColorControl.with('HueSaturation'),
-    ),
-    GenericSwitch: () => this.matter.deviceTypes.GenericSwitch.with(
-      this.matter.deviceTypes.GenericSwitch.requirements.server.mandatory.Switch.with(
-        'MomentarySwitch', 'MomentarySwitchRelease', 'MomentarySwitchLongPress', 'MomentarySwitchMultiPress',
-      ),
-    ),
   };
 
   constructor(cfg: DeviceConfiguration) {
