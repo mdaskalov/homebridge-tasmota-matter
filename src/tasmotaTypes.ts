@@ -1,4 +1,4 @@
-import type { Logger, MatterAccessory, MatterAPI } from 'homebridge';
+import type { Logger, MatterAccessory, MatterAPI, ClusterStateMap, ClusterHandlerMap } from 'homebridge';
 import { MQTTClient } from './mqttClient';
 
 export type Device = {
@@ -37,15 +37,27 @@ export type TasmotaCommand = {
   res?: TasmotaResponse;
 };
 
-export type ClusterHandlerMap = {
-  update: TasmotaResponse;
-  [attribute: string]: TasmotaCommand | TasmotaResponse;
-};
-
-export type TasmotaDeviceDefinition = {
+export interface DeviceDefinition {
   deviceType: string;
   clusters?: MatterAccessory<Device>['clusters'];
-  handlers?: Record<string, ClusterHandlerMap>;
+  handlers?: {
+    [K in keyof ClusterHandlerMap]?: Partial<Record<keyof ClusterHandlerMap[K], TasmotaCommand>>;
+  };
+  updates?: Partial<Record<keyof ClusterStateMap, TasmotaResponse | TasmotaResponse[]>>;
+}
+
+export interface DevicePartsDefinition extends DeviceDefinition {
+  id: string;
+  displayName?: string;
+}
+
+export interface TasmotaDeviceDefinition extends DeviceDefinition {
+  parts?: DevicePartsDefinition[];
+}
+
+export type TasmotaSensorDefinition = {
+  clusters?: MatterAccessory<Device>['clusters'];
+  updates?: Partial<Record<keyof ClusterStateMap, string>>;
 };
 
 export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
@@ -58,10 +70,12 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       onOff: {
-        update: { path: 'POWER{idx}' },
         on: { cmd: 'POWER{idx} ON' },
         off: { cmd: 'POWER{idx} OFF' },
       },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
     },
   },
   LIGHTBULB: {
@@ -73,10 +87,12 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       onOff: {
-        update: { path: 'POWER{idx}' },
         on: { cmd: 'POWER{idx} ON' },
         off: { cmd: 'POWER{idx} OFF' },
       },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
     },
   },
   LIGHTBULB_B: {
@@ -93,15 +109,16 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       onOff: {
-        update: { path: 'POWER{idx}' },
         on: { cmd: 'POWER{idx} ON' },
         off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        update: { path: 'Dimmer' },
-        moveToLevel: { cmd: 'Dimmer {value}' },
-        moveToLevelWithOnOff: { cmd: 'Dimmer {value}' },
+        moveToLevelWithOnOff: { cmd: 'Dimmer{idx} {bri}' },
       },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
+      levelControl: { path: 'Dimmer{idx}' },
     },
   },
   LIGHTBULB_B_CH: {
@@ -118,15 +135,16 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       onOff: {
-        update: { path: 'POWER{idx}' },
         on: { cmd: 'POWER{idx} ON' },
         off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        update: { path: 'Channel{idx}' },
-        moveToLevel: { cmd: 'Channel{idx} {value}' },
-        moveToLevelWithOnOff: { cmd: 'Channel{idx} {value}' },
+        moveToLevelWithOnOff: { cmd: 'Channel{idx} {bri}' },
       },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
+      levelControl: { path: 'Channel{idx}' },
     },
   },
   LIGHTBULB_B_CT: {
@@ -150,20 +168,21 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       onOff: {
-        update: { path: 'POWER{idx}' },
         on: { cmd: 'POWER{idx} ON' },
         off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        update: { path: 'Dimmer' },
-        moveToLevel: { cmd: 'Dimmer {value}' },
-        moveToLevelWithOnOff: { cmd: 'Dimmer {value}' },
+        moveToLevelWithOnOff: { cmd: 'Dimmer{idx} {bri}' },
       },
       colorControl: {
-        update: { path: 'CT' },
-        moveToColorTemperatureLogic: { cmd: 'CT {value}', res: { path: 'CT' } },
-        stopAllColorMovement: {},
+        moveToColorTemperatureLogic: { cmd: 'CT {ct}', res: { path: 'CT' } },
+        stopAllColorMovement: undefined,
       },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
+      levelControl: { path: 'Dimmer{idx}' },
+      colorControl: { path: 'CT' },
     },
   },
   LIGHTBULB_B_HS: {
@@ -189,19 +208,67 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       onOff: {
-        update: { path: 'POWER{idx}' },
         on: { cmd: 'POWER{idx} ON' },
         off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        update: { path: 'Channel{idx}' },
-        moveToLevelWithOnOff: { cmd: 'Channel{idx} {value}' },
+        moveToLevelWithOnOff: { cmd: 'Dimmer{idx} {bri}' },
       },
       colorControl: {
-        update: { path: 'HSBColor' },
-        moveToColorTemperatureLogic: { cmd: 'HSBColor', res: { path: 'HSBColor' } },
-        stopAllColorMovement: {},
+        moveToColorTemperatureLogic: { cmd: 'HSBColor {hue},{sat},{bri}', res: { path: 'HSBColor' } },
+        moveToHueAndSaturationLogic: { cmd: 'HSBColor {hue},{sat},{bri}', res: { path: 'HSBColor' } },
+        moveToHueLogic: { cmd: 'HSBColor1 {hue}', res: { path: 'HSBColor' } },
+        moveToSaturationLogic: { cmd: 'HSBColor2 {sat}', res: { path: 'HSBColor' } },
+        stopAllColorMovement: undefined,
       },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
+      levelControl: { path: 'Dimmer{idx}' },
+      colorControl: { path: 'HSBColor' },
+    },
+  },
+  LIGHTBULB_B_HS_CT: {
+    deviceType: 'ExtendedColorLight',
+    clusters: {
+      onOff: {
+        onOff: false,
+      },
+      levelControl: {
+        currentLevel: 254,
+        minLevel: 1,
+        maxLevel: 254,
+      },
+      colorControl: {
+        colorMode: 0,
+        currentHue: 0,
+        currentSaturation: 254,
+        colorTempPhysicalMinMireds: 147,
+        colorTempPhysicalMaxMireds: 454,
+        colorTemperatureMireds: 250,
+        coupleColorTempToLevelMinMireds: 147,
+      },
+    },
+    handlers: {
+      onOff: {
+        on: { cmd: 'POWER{idx} ON' },
+        off: { cmd: 'POWER{idx} OFF' },
+      },
+      levelControl: {
+        moveToLevelWithOnOff: { cmd: 'HSBColor3 {bri}', res: { path: 'HSBColor' } },
+      },
+      colorControl: {
+        moveToColorTemperatureLogic: { cmd: 'CT {ct}', res: { path: 'CT' } },
+        moveToHueAndSaturationLogic: { cmd: 'HSBColor {hue},{sat},{bri}', res: { path: 'HSBColor' } },
+        moveToHueLogic: { cmd: 'HSBColor1 {hue}', res: { path: 'HSBColor' } },
+        moveToSaturationLogic: { cmd: 'HSBColor2 {sat}', res: { path: 'HSBColor' } },
+        stopAllColorMovement: undefined,
+      },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
+      levelControl: { path: 'Dimmer' },
+      colorControl: [{ path: 'HSBColor' }, { path: 'CT' }],
     },
   },
   BUTTON: {
@@ -212,10 +279,8 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
         numberOfPositions: 2,
       },
     },
-    handlers: {
-      switch: {
-        update: { path: 'Button{idx}.Action' },
-      },
+    updates: {
+      switch: { path: 'Button{idx}.Action' },
     },
   },
   BUTTON_SW: {
@@ -226,10 +291,8 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
         numberOfPositions: 2,
       },
     },
-    handlers: {
-      switch: {
-        update: { path: 'POWER{idx}' },
-      },
+    updates: {
+      switch: { path: 'POWER{idx}' },
     },
   },
   CONTACT: {
@@ -239,10 +302,8 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
         stateValue: true,
       },
     },
-    handlers: {
-      booleanState: {
-        update: { path: 'Switch{idx}.Action' },
-      },
+    updates: {
+      booleanState: { path: 'Switch{idx}.Action' },
     },
   },
   VALVE: {
@@ -257,10 +318,12 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       valveConfigurationAndControl: {
-        update: { path: 'POWER{idx}' },
         open: { cmd: 'POWER{idx} ON', res: { shared: true } },
         close: { cmd: 'POWER{idx} OFF', res: { shared: true } },
       },
+    },
+    updates: {
+      valveConfigurationAndControl: { path: 'POWER{idx}' },
     },
   },
   LOCK: {
@@ -275,17 +338,18 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     handlers: {
       doorLock: {
-        update: { path: 'POWER{idx}' },
         lockDoor: { cmd: 'POWER{idx} ON', res: { shared: true } },
         unlockDoor: { cmd: 'POWER{idx} OFF', res: { shared: true } },
       },
     },
+    updates: {
+      doorLock: { path: 'POWER{idx}' },
+    },
   },
 };
 
-export const SENSOR_TYPES: Record<string, TasmotaDeviceDefinition> = {
-  Temperature: {
-    deviceType: 'TemperatureSensor',
+export const SENSOR_TYPES: Record<string, TasmotaSensorDefinition> = {
+  TemperatureSensor: {
     clusters: {
       temperatureMeasurement: {
         measuredValue: 2200,
@@ -293,14 +357,11 @@ export const SENSOR_TYPES: Record<string, TasmotaDeviceDefinition> = {
         maxMeasuredValue: 10000,
       },
     },
-    handlers: {
-      temperatureMeasurement: {
-        update: { path: 'Temperature' },
-      },
+    updates: {
+      temperatureMeasurement: 'Temperature',
     },
   },
-  Humidity: {
-    deviceType: 'HumiditySensor',
+  HumiditySensor: {
     clusters: {
       relativeHumidityMeasurement: {
         measuredValue: 5500,
@@ -308,10 +369,8 @@ export const SENSOR_TYPES: Record<string, TasmotaDeviceDefinition> = {
         maxMeasuredValue: 10000,
       },
     },
-    handlers: {
-      relativeHumidityMeasurement: {
-        update: { path: 'Humidity' },
-      },
+    updates: {
+      relativeHumidityMeasurement: 'Humidity',
     },
   },
 };
