@@ -1,6 +1,6 @@
 import type { Logger, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
-import type { Device, DeviceConfiguration, TasmotaCommand, TasmotaResponse } from './tasmotaTypes';
+import type { Device, DeviceConfiguration, TasmotaCommand, TasmotaResponse, DeviceDefinition } from './tasmotaTypes';
 import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
 import { TypeMapper } from './typeMapper';
 
@@ -16,6 +16,11 @@ interface AccessoryConfig {
   handlers: MatterAccessory<Device>['handlers'];
   parts: MatterAccessory<Device>['parts'];
 }
+
+type UpdateHandler = {
+  cluster: string;
+  res: TasmotaResponse;
+};
 
 export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly log: Logger;
@@ -104,99 +109,120 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
-  private configure(cfg: DeviceConfiguration): AccessoryConfig {
-    if (cfg.device.type === 'SENSOR') {
-      return this.configureSensors(cfg);
-    }
-    const deviceDefinition = DEVICE_TYPES[cfg.device.type];
-    if (!deviceDefinition) {
-      throw new Error('Incorrect device definition!');
-    }
-    const configuredClusters: string[] = [];
+  private configureHandlers(cfg: DeviceConfiguration, device: DeviceDefinition): MatterAccessory<Device>['handlers'] | undefined {
     const handlers: MatterAccessory<Device>['handlers'] = {};
-    for (const [clusterName, clusterHandlerMap] of Object.entries(deviceDefinition.handlers ?? {})) {
+    for (const [clusterName, clusterHandlerMap] of Object.entries(device.handlers ?? {})) {
       const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
-      const label = `${cfg.device.name}:${clusterName}`;
-      configuredClusters.push(clusterName);
-      for (const [command, commandDefinition] of Object.entries(clusterHandlerMap)) {
-        if (Object.keys(commandDefinition).length === 0) {
-          continue;
-        }
-        if (command === 'update') {
-          const tasmotaResponse = commandDefinition as TasmotaResponse;
-          const topic = this.variables.expand(tasmotaResponse.topic || '{stat}/RESULT');
-          const path = this.variables.expand(tasmotaResponse.path || '');
-          cfg.mqtt.subscribe(topic, message => {
-            const value = Variables.getValueByPath(message, path);
-            this.typeMapper.toMatter(value, clusterName);
-          });
-        } else {
-          clusterHandlers[command] = async (args) => {
-            const tasmotaCommand = commandDefinition as TasmotaCommand;
-            const value = await this.typeMapper.fromMatter(args, clusterName, command);
-            await this.handle(`${label}:${command}`, tasmotaCommand, value);
-          };
-        }
+      for (const [command, tasmotaCommand] of Object.entries(clusterHandlerMap)) {
+        clusterHandlers[command] = async (args) => {
+          if (tasmotaCommand !== undefined) {
+            await this.typeMapper.fromMatter(args, clusterName, command);
+            await this.handle(`${cfg.device.name}:${clusterName}:${command}`, tasmotaCommand);
+          }
+        };
       }
       if (Object.keys(clusterHandlers).length > 0) {
         handlers[clusterName] = clusterHandlers;
       }
     }
-
-    this.log.debug(`${cfg.device.name}: Configured as ${deviceDefinition.deviceType} with ${configuredClusters.join(', ')} cluster(s)`);
-    return {
-      displayName: cfg.device.name,
-      deviceType: this.typeMapper.toEndpointType(deviceDefinition.deviceType),
-      context: cfg.device,
-      clusters: deviceDefinition.clusters,
-      handlers: Object.keys(handlers).length > 0 ? handlers : undefined,
-      parts: undefined,
-    };
+    return Object.keys(handlers).length > 0 ? handlers : undefined;
   }
 
-  private configureSensors(cfg: DeviceConfiguration): AccessoryConfig {
-    const deviceSensors = JSON.parse(cfg.deviceSensors || '');
-    if (deviceSensors === undefined) {
-      throw new Error('Unable to parse sensors informtaion');
+  private configureUpdateHandlers(cfg: DeviceConfiguration, handlers: UpdateHandler[], partId?: string) {
+    for (const handler of handlers) {
+      cfg.mqtt.subscribe(this.typeMapper.expand(handler.res.topic || '{stat}/RESULT'), message => {
+        const value = TypeMapper.getValueByPath(message, this.typeMapper.expand(handler.res.path || ''));
+        this.typeMapper.toMatter(value, handler.cluster, partId);
+      });
     }
-    const parts: MatterAccessory<Device>['parts'] = [];
-    for (const [sensorType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
-      const path = this.variables.findPath(deviceSensors, sensorType);
-      if (path) {
-        this.log.info(`${cfg.device.name}: Added ${sensorType} sensor`);
-        const partId = `${sensorType}Sensor`;
-        const sensor = {
-          id: partId,
-          displayName: sensorType,
-          deviceType: this.typeMapper.toEndpointType(sensorDefinition.deviceType),
-          clusters: sensorDefinition.clusters!,
+  }
+
+  private configureUpdates(cfg: DeviceConfiguration, device: DeviceDefinition, partId?: string) {
+    const handlers: UpdateHandler[] = [];
+    for (const [cluster, tasmotaResponse] of Object.entries(device.updates ?? {})) {
+      if (Array.isArray(tasmotaResponse)) {
+        tasmotaResponse.forEach(response => {
+          handlers.push({ cluster, res: response });
+        });
+      } else if (tasmotaResponse !== undefined) {
+        handlers.push({ cluster, res: tasmotaResponse });
+      }
+    }
+    this.configureUpdateHandlers(cfg, handlers, partId);
+  }
+
+  private configure(cfg: DeviceConfiguration): AccessoryConfig {
+    const device = DEVICE_TYPES[cfg.device.type];
+    if (device) {
+      if (Array.isArray(device.parts) && device.parts.length > 0) {
+        const parts: MatterAccessory<Device>['parts'] = [];
+        device.parts.forEach((partDef, index) => {
+          const partID = partDef.id;
+          const part = {
+            id: partID,
+            displayName: partDef.displayName || `${cfg.device.name}-part${index + 1}`,
+            deviceType: this.typeMapper.toEndpointType(partDef.deviceType),
+            clusters: partDef.clusters!,
+            handlers: this.configureHandlers(cfg, partDef),
+          };
+          this.configureUpdates(cfg, partDef, partID);
+          parts.push(part);
+        });
+        return {
+          displayName: cfg.device.name,
+          deviceType: cfg.matter.deviceTypes.BridgedNode,
+          context: cfg.device,
+          clusters: undefined,
+          handlers: undefined,
+          parts: parts,
         };
-        parts.push(sensor);
-        for (const [clusterName, clusterCommands] of Object.entries(sensorDefinition.handlers as object)) {
-          for (const [command, tasmotaCommand] of Object.entries(clusterCommands as object)) {
-            if (command === 'update') {
-              const topic = this.variables.expand(tasmotaCommand.topic || '{sensor}');
-              cfg.mqtt.subscribe(topic, message => {
-                const value = Variables.getValueByPath(message, path);
-                this.typeMapper.toMatter(value, clusterName, partId);
-              });
+      } else {
+        this.configureUpdates(cfg, device);
+        return {
+          displayName: cfg.device.name,
+          deviceType: this.typeMapper.toEndpointType(device.deviceType),
+          context: cfg.device,
+          clusters: device.clusters,
+          handlers: this.configureHandlers(cfg, device),
+          parts: undefined,
+        };
+      }
+    } else if (cfg.device.type === 'SENSOR') {
+      const parts: MatterAccessory<Device>['parts'] = [];
+      const deviceSensors = JSON.parse(cfg.deviceSensors || '');
+      if (deviceSensors !== undefined) {
+        for (const [deviceType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
+          const partId = `${deviceType}Part`;
+          const handlers: UpdateHandler[] = [];
+          for (const [cluster, updatePath] of Object.entries(sensorDefinition.updates ?? {})) {
+            const path = this.typeMapper.findPath(deviceSensors, updatePath);
+            if (path) {
+              handlers.push({ cluster, res: { topic: '{sensor}', path } });
             }
+          }
+          if (handlers.length > 0) {
+            this.configureUpdateHandlers(cfg, handlers, partId);
+            parts.push({
+              id: partId,
+              displayName: deviceType,
+              deviceType: this.typeMapper.toEndpointType(deviceType),
+              clusters: sensorDefinition.clusters!,
+            });
           }
         }
       }
+      if (parts.length === 0) {
+        throw new Error('Unable to autodetect sensors informtaion');
+      }
+      return {
+        displayName: cfg.device.name,
+        deviceType: cfg.matter.deviceTypes.BridgedNode,
+        context: cfg.device,
+        clusters: undefined,
+        handlers: undefined,
+        parts: parts,
+      };
     }
-    if (parts.length === 0) {
-      throw new Error('No sensors found');
-    }
-    return {
-      displayName: cfg.device.name,
-      deviceType: cfg.matter.deviceTypes.BridgedNode,
-      context: cfg.device,
-      clusters: undefined,
-      handlers: undefined,
-      parts: parts,
-    };
-  }
 
     throw new Error('Incorrect device definition!');
   }
