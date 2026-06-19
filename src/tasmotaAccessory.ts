@@ -3,7 +3,6 @@ import type { MQTTClient } from './mqttClient';
 import type { Device, DeviceConfiguration, TasmotaCommand, TasmotaResponse } from './tasmotaTypes';
 import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
 import { TypeMapper } from './typeMapper';
-import { Variables } from './variables';
 
 const READ_TIMEOUT = 1000;
 const EXEC_TIMEOUT = 1000;
@@ -23,7 +22,6 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   private readonly mqtt: MQTTClient;
   private readonly typeMapper: TypeMapper;
   private readonly logUnexpected?: boolean;
-  private readonly variables: Variables;
 
   // Required MatterAccessory properties
   public readonly UUID: string;
@@ -44,7 +42,6 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.mqtt = cfg.mqtt;
     this.typeMapper = new TypeMapper(cfg);
     this.logUnexpected = cfg.logUnexpected;
-    this.variables = new Variables(cfg.device);
 
     const accessoryConfig = this.configure(cfg);
 
@@ -70,7 +67,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const resTopic = `stat/${topic}/${res || 'RESULT'}`;
     try {
       const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
-      return Variables.getValueByPath(response, path || property);
+      return TypeMapper.getValueByPath(response, path || property);
     } catch (err) {
       throw new Error(`Error reading property ${property} from ${topic}: ${err}`);
     }
@@ -201,16 +198,19 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     };
   }
 
-  private async handle(label: string, command: TasmotaCommand, value?: string): Promise<string> {
-    const [cmd, ...other] = this.variables.expand(command.cmd, value).split(' ');
-    const message = this.variables.expand(other.join(' ') || '', value);
+    throw new Error('Incorrect device definition!');
+  }
+
+  private async handle(label: string, command: TasmotaCommand): Promise<string> {
+    const [cmd, ...other] = this.typeMapper.expand(command.cmd).split(' ');
+    const message = this.typeMapper.expand(other.join(' ') || '');
     const reqTopic = `cmnd/${this.context.topic}/${cmd}`;
-    const resTopic = this.variables.expand(command.res?.topic || '{stat}/RESULT', value);
-    const path = this.variables.expand(command.res?.path || cmd, value);
+    const resTopic = this.typeMapper.expand(command.res?.topic || '{stat}/RESULT');
+    const path = this.typeMapper.expand(command.res?.path || cmd);
     try {
       let response = '';
       await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, (message) => {
-        const res = Variables.getValueByPath(message, path);
+        const res = TypeMapper.getValueByPath(message, path);
         if (res === undefined) {
           const msg = `${label} :- expecting ${path}, ignored: ${message}`;
           if (this.logUnexpected === true) {
