@@ -2,7 +2,7 @@ import { Logger, PlatformConfig } from 'homebridge';
 import { IClientOptions, MqttClient, connect } from 'mqtt';
 
 type TopicCallback =
-  (msg: string, topic: string) => boolean | void; // priority handler consumes message if not false
+  (msg: string, topic: string) => Promise<boolean | void> | boolean | void; // response handler consumes message if not false
 
 type ReadCallback =
   (msg: string) => boolean | void; // true: consume, false: ignore
@@ -14,7 +14,7 @@ type TopicHandler = {
 };
 
 export class MQTTClient {
-  private prioHandlers: TopicHandler[] = [];
+  private responseHandlers: TopicHandler[] = [];
   private handlers: TopicHandler[] = [];
   private client: MqttClient;
 
@@ -37,19 +37,19 @@ export class MQTTClient {
       this.log.error('MQTT: Error: %s', err.message);
     });
 
-    this.client.on('message', (topic, message) => {
+    this.client.on('message', async (topic, message) => {
       const handlers = this.handlers.filter(h => this.matchTopic(h, topic));
-      const prioHandlers = this.prioHandlers.filter(h => this.matchTopic(h, topic));
-      const handlersCount = handlers.length + prioHandlers.length;
-      this.log.debug('MQTT: Message on topic: %s, handler(s): %d (%d prio)', topic, handlersCount, prioHandlers.length);
-      for (const prioHandler of prioHandlers) {
-        if (prioHandler.callback(message.toString(), topic) === true) {
-          this.log.debug('MQTT: Message consumed by prioHandler %s', prioHandler.id);
+      const responseHandlers = this.responseHandlers.filter(h => this.matchTopic(h, topic));
+      const handlersCount = handlers.length + responseHandlers.length;
+      this.log.debug('MQTT: Message on topic: %s, handler(s): %d (%d response)', topic, handlersCount, responseHandlers.length);
+      for (const responseHandler of responseHandlers) {
+        if (await responseHandler.callback(message.toString(), topic) === true) {
+          this.log.debug('MQTT: Message consumed by responseHandler %s', responseHandler.id);
           return;
         }
       }
       for (const handler of handlers) {
-        if (handler.callback(message.toString(), topic) === true) {
+        if (await handler.callback(message.toString(), topic) === true) {
           this.log.debug('MQTT: Message consumed by Handler %s', handler.id);
           return;
         }
@@ -59,7 +59,7 @@ export class MQTTClient {
 
   shutdown() {
     this.log.debug('MQTT: Shutdown. Remove all handlers');
-    const handlers = [...this.handlers, ...this.prioHandlers];
+    const handlers = [...this.handlers, ...this.responseHandlers];
     for (const handler of handlers) {
       this.unsubscribe(handler.id);
     }
@@ -80,38 +80,38 @@ export class MQTTClient {
     return false;
   }
 
-  handlersCount(topic: string): { handlersCount: number, prioHandlersCount: number } {
-    const prioHandlersCount = this.prioHandlers.filter(h => this.matchTopic(h, topic)).length;
-    const handlersCount = prioHandlersCount + this.handlers.filter(h => this.matchTopic(h, topic)).length;
-    return { handlersCount, prioHandlersCount };
+  handlersCount(topic: string): { handlersCount: number, responseHandlersCount: number } {
+    const responseHandlersCount = this.responseHandlers.filter(h => this.matchTopic(h, topic)).length;
+    const handlersCount = responseHandlersCount + this.handlers.filter(h => this.matchTopic(h, topic)).length;
+    return { handlersCount, responseHandlersCount: responseHandlersCount };
   }
 
-  subscribe(topic: string, callback: TopicCallback, priority = false): string | undefined {
+  subscribe(topic: string, callback: TopicCallback, response = false): string | undefined {
     if (this.client) {
       const id = crypto.randomUUID();
       const handler: TopicHandler = { id, topic, callback };
-      if (priority) {
-        this.prioHandlers.push(handler);
+      if (response) {
+        this.responseHandlers.push(handler);
       } else {
         this.handlers.push(handler);
       }
-      const { prioHandlersCount, handlersCount } = this.handlersCount(topic);
+      const { responseHandlersCount, handlersCount } = this.handlersCount(topic);
       if (handlersCount === 1) {
-        this.log.debug('MQTT: Subscribed topic: %s, %s: %s, handler(s): %d (%d prio)',
+        this.log.debug('MQTT: Subscribed topic: %s, %s: %s, handler(s): %d (%d response)',
           topic,
-          priority ? 'prioHandler' : 'Handler',
+          response ? 'responseHandler' : 'Handler',
           id,
           handlersCount,
-          prioHandlersCount,
+          responseHandlersCount,
         );
         this.client.subscribe(topic);
       } else {
-        this.log.debug('MQTT: Added %s: %s, on: %s, handler(s): %d (%d prio)',
-          priority ? 'prioHandler' : 'Handler',
+        this.log.debug('MQTT: Added %s: %s, on: %s, handler(s): %d (%d response)',
+          response ? 'responseHandler' : 'Handler',
           id,
           topic,
           handlersCount,
-          prioHandlersCount,
+          responseHandlersCount,
         );
       }
       return id;
@@ -120,35 +120,35 @@ export class MQTTClient {
   }
 
   unsubscribe(id: string) {
-    let priority = true;
-    let handler = this.prioHandlers.find(h => h.id === id);
+    let response = true;
+    let handler = this.responseHandlers.find(h => h.id === id);
     if (!handler) {
-      priority = false;
+      response = false;
       handler = this.handlers.find(h => h.id === id);
     }
     if (handler) {
-      if (priority) {
-        this.prioHandlers = this.prioHandlers.filter((h => h.id !== id));
+      if (response) {
+        this.responseHandlers = this.responseHandlers.filter((h => h.id !== id));
       } else {
         this.handlers = this.handlers.filter((h => h.id !== id));
       }
-      const { prioHandlersCount, handlersCount } = this.handlersCount(handler.topic);
+      const { responseHandlersCount, handlersCount } = this.handlersCount(handler.topic);
       if (handlersCount === 0) {
         this.client.unsubscribe(handler.topic);
-        this.log.debug('MQTT: Unubscribed topic: %s, %s: %s, handler(s): %d (%d prio)',
+        this.log.debug('MQTT: Unubscribed topic: %s, %s: %s, handler(s): %d (%d response)',
           handler.topic,
-          priority ? 'prioHandler' : 'Handler',
+          response ? 'responseHandler' : 'Handler',
           handler.id,
           handlersCount,
-          prioHandlersCount,
+          responseHandlersCount,
         );
       } else {
-        this.log.debug('MQTT: Removed %s: %s on %s, handler(s): %d (%d prio)',
-          priority ? 'prioHandler' : 'Handler',
+        this.log.debug('MQTT: Removed %s: %s on %s, handler(s): %d (%d response)',
+          response ? 'responseHandler' : 'Handler',
           handler.id,
           handler.topic,
           handlersCount,
-          prioHandlersCount,
+          responseHandlersCount,
         );
       }
     } else {

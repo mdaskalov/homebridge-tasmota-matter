@@ -12,9 +12,9 @@ interface AccessoryConfig {
   displayName: string;
   deviceType: EndpointType;
   context: Device;
-  clusters: MatterAccessory<Device>['clusters'];
-  handlers: MatterAccessory<Device>['handlers'];
-  parts: MatterAccessory<Device>['parts'];
+  clusters?: MatterAccessory<Device>['clusters'];
+  handlers?: MatterAccessory<Device>['handlers'];
+  parts?: MatterAccessory<Device>['parts'];
 }
 
 type UpdateHandler = {
@@ -130,9 +130,9 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
 
   private configureUpdateHandlers(cfg: DeviceConfiguration, handlers: UpdateHandler[], partId?: string) {
     for (const handler of handlers) {
-      cfg.mqtt.subscribe(this.typeMapper.expand(handler.res.topic || '{stat}/RESULT'), message => {
+      cfg.mqtt.subscribe(this.typeMapper.expand(handler.res.topic || '{stat}/RESULT'), async (message) => {
         const value = TypeMapper.getValueByPath(message, this.typeMapper.expand(handler.res.path || ''));
-        this.typeMapper.toMatter(value, handler.cluster, partId);
+        await this.typeMapper.toMatter(value, handler.cluster, partId);
       });
     }
   }
@@ -172,8 +172,6 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
           displayName: cfg.device.name,
           deviceType: cfg.matter.deviceTypes.BridgedNode,
           context: cfg.device,
-          clusters: undefined,
-          handlers: undefined,
           parts: parts,
         };
       } else {
@@ -184,7 +182,6 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
           context: cfg.device,
           clusters: device.clusters,
           handlers: this.configureHandlers(cfg, device),
-          parts: undefined,
         };
       }
     } else if (cfg.device.type === 'SENSOR') {
@@ -218,8 +215,6 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         displayName: cfg.device.name,
         deviceType: cfg.matter.deviceTypes.BridgedNode,
         context: cfg.device,
-        clusters: undefined,
-        handlers: undefined,
         parts: parts,
       };
     }
