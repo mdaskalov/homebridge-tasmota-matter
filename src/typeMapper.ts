@@ -269,7 +269,7 @@ export class TypeMapper {
 
     return {
       hue: Math.round(hue),  // 0 to 360
-      sat: Math.round(sat)   // 0 to 100
+      sat: Math.round(sat),  // 0 to 100
     };
   }
 
