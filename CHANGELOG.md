@@ -2,6 +2,13 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.12
+- Fully implemented RGB and RGBCCT lights
+- Implemented multipart device
+- Implemented custom device (using JSON definition)
+- Separate command and update handlers
+- Asynchroneous value mappers
+
 ## v0.0.11
 - Added water valve (not supported in Home)
 - Added door lock
