@@ -1,0 +1,83 @@
+{
+  "deviceType": "ExtendedColorLight",
+  "clusters": {
+    "onOff": {
+      "onOff": false
+    },
+    "levelControl": {
+      "currentLevel": 254,
+      "minLevel": 1,
+      "maxLevel": 254
+    },
+    "colorControl": {
+      "colorMode": 0,
+      "currentHue": 0,
+      "currentSaturation": 254,
+      "colorTempPhysicalMinMireds": 147,
+      "colorTempPhysicalMaxMireds": 454,
+      "colorTemperatureMireds": 250,
+      "coupleColorTempToLevelMinMireds": 147
+    }
+  },
+  "handlers": {
+    "onOff": {
+      "on": {
+        "cmd": "POWER ON"
+      },
+      "off": {
+        "cmd": "POWER OFF"
+      }
+    },
+    "levelControl": {
+      "moveToLevelWithOnOff": {
+        "cmd": "HSBColor3 {bri}",
+        "res": {
+          "path": "HSBColor"
+        }
+      }
+    },
+    "colorControl": {
+      "moveToColorTemperatureLogic": {
+        "cmd": "CT {ct}",
+        "res": {
+          "path": "CT"
+        }
+      },
+      "moveToHueAndSaturationLogic": {
+        "cmd": "HSBColor {hue},{sat},{bri}",
+        "res": {
+          "path": "HSBColor"
+        }
+      },
+      "moveToHueLogic": {
+        "cmd": "HSBColor1 {hue}",
+        "res": {
+          "path": "HSBColor"
+        }
+      },
+      "moveToSaturationLogic": {
+        "cmd": "HSBColor2 {sat}",
+        "res": {
+          "path": "HSBColor"
+        }
+      },
+      "stopAllColorMovement": null
+    }
+  },
+  "updates": {
+    "onOff": {
+      "path": "POWER"
+    },
+    "levelControl": {
+      "path": "Dimmer"
+    },
+    "colorControl": [
+      {
+        "path": "HSBColor"
+      },
+      {
+        "path": "CT"
+      }
+    ]
+  }
+}

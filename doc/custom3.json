@@ -1,0 +1,36 @@
+{
+  "deviceType": "OnOffLight",
+  "clusters": {
+    "onOff": {
+      "onOff": false
+    },
+    "levelControl": {
+      "currentLevel": 254,
+      "minLevel": 1,
+      "maxLevel": 254
+    }
+  },
+  "handlers": {
+    "onOff": {
+      "on": {
+        "cmd": "POWER ON"
+      },
+      "off": {
+        "cmd": "POWER OFF"
+      }
+    },
+    "levelControl": {
+      "moveToLevelWithOnOff": {
+        "cmd": "Dimmer {bri}"
+      }
+    }
+  },
+  "updates": {
+    "onOff": {
+      "path": "POWER"
+    },
+    "levelControl": {
+      "path": "Dimmer"
+    }
+  }
+}

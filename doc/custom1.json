@@ -1,0 +1,23 @@
+{
+  "deviceType": "OnOffSwitch",
+  "clusters": {
+    "onOff": {
+      "onOff": false
+    }
+  },
+  "handlers": {
+    "onOff": {
+      "on": {
+        "cmd": "POWER ON"
+      },
+      "off": {
+        "cmd": "POWER OFF"
+      }
+    }
+  },
+  "updates": {
+    "onOff": {
+      "path": "POWER"
+    }
+  }
+}

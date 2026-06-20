@@ -1,0 +1,55 @@
+{
+  "deviceType": "BridgedNode",
+  "parts": [
+    {
+      "id": "switch-1",
+      "displayName": "Switch 1",
+      "deviceType": "OnOffSwitch",
+      "clusters": {
+        "onOff": {
+          "onOff": false
+        }
+      },
+      "handlers": {
+        "onOff": {
+          "on": {
+            "cmd": "POWER1 ON"
+          },
+          "off": {
+            "cmd": "POWER1 OFF"
+          }
+        }
+      },
+      "updates": {
+        "onOff": {
+          "path": "POWER1"
+        }
+      }
+    },
+    {
+      "id": "switch-2",
+      "displayName": "Switch 2",
+      "deviceType": "OnOffSwitch",
+      "clusters": {
+        "onOff": {
+          "onOff": false
+        }
+      },
+      "handlers": {
+        "onOff": {
+          "on": {
+            "cmd": "POWER2 ON"
+          },
+          "off": {
+            "cmd": "POWER2 OFF"
+          }
+        }
+      },
+      "updates": {
+        "onOff": {
+          "path": "POWER2"
+        }
+      }
+    }
+  ]
+}
