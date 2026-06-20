@@ -81,14 +81,10 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   static async create(cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
     const retriesCount = retries ?? 0;
     try {
-      cfg.serialNumber ??=
-        await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5') ?? cfg.uuid.replace(/-/g, '');
-      cfg.manufacturer ??=
-        await this.getProperty(cfg, 'MODULE0', 'Module.0') ?? 'Tasmota';
-      cfg.model ??=
-        await this.getProperty(cfg, 'Hostname') ?? 'Unknown';
-      cfg.firmwareRevision ??=
-        (await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2') ?? 'Unknown').split('(')[0];
+      cfg.serialNumber ??= (await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5')) ?? cfg.uuid.replace(/-/g, '');
+      cfg.manufacturer ??= (await this.getProperty(cfg, 'MODULE0', 'Module.0')) ?? 'Tasmota';
+      cfg.model ??= (await this.getProperty(cfg, 'Hostname')) ?? 'Unknown';
+      cfg.firmwareRevision ??= ((await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')) ?? 'Unknown').split('(')[0];
       if (cfg.device.type === 'SENSOR') {
         cfg.deviceSensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
       }
@@ -97,7 +93,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         cfg.log.warn(`${cfg.device.name}: error configuring accessory information (${retriesCount + 1}): ${err}`);
       }
       if (retriesCount < 2) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_TIMEOUT));
+        await new Promise((resolve) => setTimeout(resolve, RETRY_TIMEOUT));
         return this.create(cfg, retriesCount + 1);
       }
       return undefined;
@@ -117,7 +113,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         clusterHandlers[command] = async (args) => {
           if (tasmotaCommand !== undefined) {
             await this.typeMapper.fromMatter(args, clusterName, command);
-            await this.handle(`${cfg.device.name}:${clusterName}:${command}`, tasmotaCommand);
+            await this.execute(`${cfg.device.name}:${clusterName}:${command}`, tasmotaCommand);
           }
         };
       }
@@ -141,9 +137,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const handlers: UpdateHandler[] = [];
     for (const [cluster, tasmotaResponse] of Object.entries(device.updates ?? {})) {
       if (Array.isArray(tasmotaResponse)) {
-        tasmotaResponse.forEach(response => {
-          handlers.push({ cluster, res: response });
-        });
+        tasmotaResponse.forEach((response) => handlers.push({ cluster, res: response }));
       } else if (tasmotaResponse !== undefined) {
         handlers.push({ cluster, res: tasmotaResponse });
       }
@@ -222,7 +216,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     throw new Error('Incorrect device definition!');
   }
 
-  private async handle(label: string, command: TasmotaCommand): Promise<string> {
+  private async execute(label: string, command: TasmotaCommand): Promise<string> {
     const [cmd, ...other] = this.typeMapper.expand(command.cmd).split(' ');
     const message = this.typeMapper.expand(other.join(' ') || '');
     const reqTopic = `cmnd/${this.context.topic}/${cmd}`;
@@ -230,7 +224,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const path = this.typeMapper.expand(command.res?.path || cmd);
     try {
       let response = '';
-      await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, (message) => {
+      await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, async (message) => {
         const res = TypeMapper.getValueByPath(message, path);
         if (res === undefined) {
           const msg = `${label} :- expecting ${path}, ignored: ${message}`;
@@ -268,5 +262,4 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       parts: this.parts,
     };
   }
-
 }

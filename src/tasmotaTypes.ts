@@ -13,7 +13,7 @@ export type DeviceConfiguration = {
   log: Logger;
   matter: MatterAPI;
   mqtt: MQTTClient;
-  uuid: string,
+  uuid: string;
   device: Device;
   logTimeouts?: boolean;
   logUnexpected?: boolean;
@@ -310,8 +310,8 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     deviceType: 'WaterValve',
     clusters: {
       valveConfigurationAndControl: {
-        currentState: 0,      //Closed
-        targetState: 0,       // Closed
+        currentState: 0, //Closed
+        targetState: 0, // Closed
         openDuration: null,
         defaultOpenDuration: null,
       },

@@ -1,11 +1,9 @@
 import { Logger, PlatformConfig } from 'homebridge';
 import { IClientOptions, MqttClient, connect } from 'mqtt';
 
-type TopicCallback =
-  (msg: string, topic: string) => Promise<boolean | void>; // response handler consumes message if not false
+type TopicCallback = (msg: string, topic: string) => Promise<boolean | void>; // response handler consumes message if not false
 
-type ReadCallback =
-  (msg: string) => Promise<boolean | void>; // true: consume, false: ignore
+type ReadCallback = (msg: string) => Promise<boolean | void>; // true: consume, false: ignore
 
 type TopicHandler = {
   id: string;
@@ -18,7 +16,10 @@ export class MQTTClient {
   private handlers: TopicHandler[] = [];
   private client: MqttClient;
 
-  constructor(private log: Logger, private config: PlatformConfig) {
+  constructor(
+    private log: Logger,
+    private config: PlatformConfig,
+  ) {
     const broker = config.mqttBroker || 'localhost';
     const options: IClientOptions = {
       clientId: 'homebridge-tasmota-matter_' + Math.random().toString(16).slice(2, 10),
@@ -32,24 +33,20 @@ export class MQTTClient {
     };
 
     this.client = connect('mqtt://' + broker, options);
-
-    this.client.on('error', err => {
-      this.log.error('MQTT: Error: %s', err.message);
-    });
-
+    this.client.on('error', (err) => this.log.error('MQTT: Error: %s', err.message));
     this.client.on('message', async (topic, message) => {
-      const handlers = this.handlers.filter(h => this.matchTopic(h, topic));
-      const responseHandlers = this.responseHandlers.filter(h => this.matchTopic(h, topic));
+      const handlers = this.handlers.filter((h) => this.matchTopic(h, topic));
+      const responseHandlers = this.responseHandlers.filter((h) => this.matchTopic(h, topic));
       const handlersCount = handlers.length + responseHandlers.length;
       this.log.debug('MQTT: Message on topic: %s, handler(s): %d (%d response)', topic, handlersCount, responseHandlers.length);
       for (const responseHandler of responseHandlers) {
-        if (await responseHandler.callback(message.toString(), topic) === true) {
+        if ((await responseHandler.callback(message.toString(), topic)) === true) {
           this.log.debug('MQTT: Message consumed by responseHandler %s', responseHandler.id);
           return;
         }
       }
       for (const handler of handlers) {
-        if (await handler.callback(message.toString(), topic) === true) {
+        if ((await handler.callback(message.toString(), topic)) === true) {
           this.log.debug('MQTT: Message consumed by Handler %s', handler.id);
           return;
         }
@@ -80,9 +77,9 @@ export class MQTTClient {
     return false;
   }
 
-  handlersCount(topic: string): { handlersCount: number, responseHandlersCount: number } {
-    const responseHandlersCount = this.responseHandlers.filter(h => this.matchTopic(h, topic)).length;
-    const handlersCount = responseHandlersCount + this.handlers.filter(h => this.matchTopic(h, topic)).length;
+  handlersCount(topic: string): { handlersCount: number; responseHandlersCount: number } {
+    const responseHandlersCount = this.responseHandlers.filter((h) => this.matchTopic(h, topic)).length;
+    const handlersCount = responseHandlersCount + this.handlers.filter((h) => this.matchTopic(h, topic)).length;
     return { handlersCount, responseHandlersCount: responseHandlersCount };
   }
 
@@ -97,7 +94,8 @@ export class MQTTClient {
       }
       const { responseHandlersCount, handlersCount } = this.handlersCount(topic);
       if (handlersCount === 1) {
-        this.log.debug('MQTT: Subscribed topic: %s, %s: %s, handler(s): %d (%d response)',
+        this.log.debug(
+          'MQTT: Subscribed topic: %s, %s: %s, handler(s): %d (%d response)',
           topic,
           response ? 'responseHandler' : 'Handler',
           id,
@@ -106,7 +104,8 @@ export class MQTTClient {
         );
         this.client.subscribe(topic);
       } else {
-        this.log.debug('MQTT: Added %s: %s, on: %s, handler(s): %d (%d response)',
+        this.log.debug(
+          'MQTT: Added %s: %s, on: %s, handler(s): %d (%d response)',
           response ? 'responseHandler' : 'Handler',
           id,
           topic,
@@ -121,21 +120,22 @@ export class MQTTClient {
 
   unsubscribe(id: string) {
     let response = true;
-    let handler = this.responseHandlers.find(h => h.id === id);
+    let handler = this.responseHandlers.find((h) => h.id === id);
     if (!handler) {
       response = false;
-      handler = this.handlers.find(h => h.id === id);
+      handler = this.handlers.find((h) => h.id === id);
     }
     if (handler) {
       if (response) {
-        this.responseHandlers = this.responseHandlers.filter((h => h.id !== id));
+        this.responseHandlers = this.responseHandlers.filter((h) => h.id !== id);
       } else {
-        this.handlers = this.handlers.filter((h => h.id !== id));
+        this.handlers = this.handlers.filter((h) => h.id !== id);
       }
       const { responseHandlersCount, handlersCount } = this.handlersCount(handler.topic);
       if (handlersCount === 0) {
         this.client.unsubscribe(handler.topic);
-        this.log.debug('MQTT: Unubscribed topic: %s, %s: %s, handler(s): %d (%d response)',
+        this.log.debug(
+          'MQTT: Unubscribed topic: %s, %s: %s, handler(s): %d (%d response)',
           handler.topic,
           response ? 'responseHandler' : 'Handler',
           handler.id,
@@ -143,7 +143,8 @@ export class MQTTClient {
           responseHandlersCount,
         );
       } else {
-        this.log.debug('MQTT: Removed %s: %s on %s, handler(s): %d (%d response)',
+        this.log.debug(
+          'MQTT: Removed %s: %s on %s, handler(s): %d (%d response)',
           response ? 'responseHandler' : 'Handler',
           handler.id,
           handler.topic,
@@ -171,28 +172,32 @@ export class MQTTClient {
         if (timeoutTimer) {
           clearTimeout(timeoutTimer);
           timeoutTimer = undefined;
-        };
+        }
         if (handlerId) {
           this.unsubscribe(handlerId);
           handlerId = undefined;
         }
       };
 
-      handlerId = this.subscribe(resTopic, async msg => {
-        let cbResponse: boolean | void;
-        try {
-          cbResponse = callback !== undefined ? await callback(msg) : true;
-        } catch (err) {
-          cleanup();
-          reject(`MQTT: Callback error: ${err}`);
-          return true; // consume
-        }
-        if (cbResponse !== false) {
-          cleanup();
-          resolve(msg);
-        }
-        return cbResponse;
-      }, true);
+      handlerId = this.subscribe(
+        resTopic,
+        async (msg) => {
+          let cbResponse: boolean | void;
+          try {
+            cbResponse = callback !== undefined ? await callback(msg) : true;
+          } catch (err) {
+            cleanup();
+            reject(`MQTT: Callback error: ${err}`);
+            return true; // consume
+          }
+          if (cbResponse !== false) {
+            cleanup();
+            resolve(msg);
+          }
+          return cbResponse;
+        },
+        true,
+      );
       timeoutTimer = setTimeout(() => {
         const elapsed = Date.now() - start;
         cleanup();
@@ -204,5 +209,4 @@ export class MQTTClient {
       }
     });
   }
-
 }
