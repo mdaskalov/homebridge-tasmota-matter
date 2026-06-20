@@ -2,10 +2,10 @@ import { Logger, PlatformConfig } from 'homebridge';
 import { IClientOptions, MqttClient, connect } from 'mqtt';
 
 type TopicCallback =
-  (msg: string, topic: string) => Promise<boolean | void> | boolean | void; // response handler consumes message if not false
+  (msg: string, topic: string) => Promise<boolean | void>; // response handler consumes message if not false
 
 type ReadCallback =
-  (msg: string) => boolean | void; // true: consume, false: ignore
+  (msg: string) => Promise<boolean | void>; // true: consume, false: ignore
 
 type TopicHandler = {
   id: string;
@@ -178,10 +178,10 @@ export class MQTTClient {
         }
       };
 
-      handlerId = this.subscribe(resTopic, msg => {
+      handlerId = this.subscribe(resTopic, async msg => {
         let cbResponse: boolean | void;
         try {
-          cbResponse = callback !== undefined ? callback(msg) : true;
+          cbResponse = callback !== undefined ? await callback(msg) : true;
         } catch (err) {
           cleanup();
           reject(`MQTT: Callback error: ${err}`);
