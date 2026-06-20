@@ -28,7 +28,6 @@ export type DeviceConfiguration = {
 export type TasmotaResponse = {
   topic?: string;
   path?: string;
-  update?: boolean;
   shared?: boolean;
 };
 

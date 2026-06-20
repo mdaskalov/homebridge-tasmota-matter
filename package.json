@@ -19,6 +19,7 @@
   "scripts": {
     "lint": "eslint src/**.ts --max-warnings=0",
     "watch": "npm run build && npm link && nodemon",
+    "generateSchema": "ts-json-schema-generator --path 'src/shemas/tasmotaDevice.ts' --type 'TasmotaDeviceSchema' --out 'src/schemas/tasmota-device.json' --no-top-ref",
     "build": "rimraf ./dist && tsc",
     "prepublishOnly": "npm run lint && npm run build",
     "test": "npm run build && node dist/index.js && echo \"No syntax errors! (node $(node -v))\""
@@ -40,6 +41,7 @@
     "nodemon": "^3.1.10",
     "prettier": "^3.8.4",
     "rimraf": "^6.0.1",
+    "ts-json-schema-generator": "^2.9.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4"
   }

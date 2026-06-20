@@ -1,8 +1,17 @@
 import type { Logger, EndpointType, MatterAccessory } from 'homebridge';
 import type { MQTTClient } from './mqttClient';
-import type { Device, DeviceConfiguration, TasmotaCommand, TasmotaResponse, DeviceDefinition } from './tasmotaTypes';
+import type {
+  Device,
+  DeviceConfiguration,
+  TasmotaCommand,
+  TasmotaResponse,
+  DeviceDefinition,
+  TasmotaDeviceDefinition,
+} from './tasmotaTypes';
 import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
 import { TypeMapper } from './typeMapper';
+import Ajv from 'ajv';
+import tasmotaDeviceSchema from './schemas/tasmota-device.json';
 
 const READ_TIMEOUT = 1000;
 const EXEC_TIMEOUT = 1000;
@@ -145,74 +154,99 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.configureUpdateHandlers(cfg, handlers, partId);
   }
 
-  private configure(cfg: DeviceConfiguration): AccessoryConfig {
-    const device = DEVICE_TYPES[cfg.device.type];
-    if (device) {
-      if (Array.isArray(device.parts) && device.parts.length > 0) {
-        const parts: MatterAccessory<Device>['parts'] = [];
-        device.parts.forEach((partDef, index) => {
-          const partID = partDef.id;
-          const part = {
-            id: partID,
-            displayName: partDef.displayName || `${cfg.device.name}-part${index + 1}`,
-            deviceType: this.typeMapper.toEndpointType(partDef.deviceType),
-            clusters: partDef.clusters!,
-            handlers: this.configureHandlers(cfg, partDef),
-          };
-          this.configureUpdates(cfg, partDef, partID);
-          parts.push(part);
-        });
-        return {
-          displayName: cfg.device.name,
-          deviceType: cfg.matter.deviceTypes.BridgedNode,
-          context: cfg.device,
-          parts: parts,
-        };
-      } else {
-        this.configureUpdates(cfg, device);
-        return {
-          displayName: cfg.device.name,
-          deviceType: this.typeMapper.toEndpointType(device.deviceType),
-          context: cfg.device,
-          clusters: device.clusters,
-          handlers: this.configureHandlers(cfg, device),
-        };
-      }
-    } else if (cfg.device.type === 'SENSOR') {
+  private configureDevice(cfg: DeviceConfiguration, device: TasmotaDeviceDefinition): AccessoryConfig {
+    if (Array.isArray(device.parts) && device.parts.length > 0) {
       const parts: MatterAccessory<Device>['parts'] = [];
-      const deviceSensors = JSON.parse(cfg.deviceSensors || '');
-      if (deviceSensors !== undefined) {
-        for (const [deviceType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
-          const partId = `${deviceType}Part`;
-          const handlers: UpdateHandler[] = [];
-          for (const [cluster, updatePath] of Object.entries(sensorDefinition.updates ?? {})) {
-            const path = this.typeMapper.findPath(deviceSensors, updatePath);
-            if (path) {
-              handlers.push({ cluster, res: { topic: '{sensor}', path } });
-            }
-          }
-          if (handlers.length > 0) {
-            this.configureUpdateHandlers(cfg, handlers, partId);
-            parts.push({
-              id: partId,
-              displayName: deviceType,
-              deviceType: this.typeMapper.toEndpointType(deviceType),
-              clusters: sensorDefinition.clusters!,
-            });
-          }
-        }
-      }
-      if (parts.length === 0) {
-        throw new Error('Unable to autodetect sensors informtaion');
-      }
+      device.parts.forEach((partDef, index) => {
+        const partID = partDef.id;
+        const part = {
+          id: partID,
+          displayName: partDef.displayName || `${cfg.device.name}-part${index + 1}`,
+          deviceType: this.typeMapper.toEndpointType(partDef.deviceType),
+          clusters: partDef.clusters!,
+          handlers: this.configureHandlers(cfg, partDef),
+        };
+        this.configureUpdates(cfg, partDef, partID);
+        parts.push(part);
+      });
       return {
         displayName: cfg.device.name,
         deviceType: cfg.matter.deviceTypes.BridgedNode,
         context: cfg.device,
         parts: parts,
       };
+    } else {
+      this.configureUpdates(cfg, device);
+      return {
+        displayName: cfg.device.name,
+        deviceType: this.typeMapper.toEndpointType(device.deviceType),
+        context: cfg.device,
+        clusters: device.clusters,
+        handlers: this.configureHandlers(cfg, device),
+      };
     }
+  }
 
+  private configureSensor(cfg: DeviceConfiguration): AccessoryConfig {
+    const parts: MatterAccessory<Device>['parts'] = [];
+    const deviceSensors = JSON.parse(cfg.deviceSensors || '');
+    if (deviceSensors !== undefined) {
+      for (const [deviceType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
+        const partId = `${deviceType}Part`;
+        const handlers: UpdateHandler[] = [];
+        for (const [cluster, updatePath] of Object.entries(sensorDefinition.updates ?? {})) {
+          const path = this.typeMapper.findPath(deviceSensors, updatePath);
+          if (path) {
+            handlers.push({ cluster, res: { topic: '{sensor}', path } });
+          }
+        }
+        if (handlers.length > 0) {
+          this.configureUpdateHandlers(cfg, handlers, partId);
+          parts.push({
+            id: partId,
+            displayName: deviceType,
+            deviceType: this.typeMapper.toEndpointType(deviceType),
+            clusters: sensorDefinition.clusters!,
+          });
+        }
+      }
+    }
+    if (parts.length === 0) {
+      throw new Error('Unable to autodetect sensors informtaion');
+    }
+    return {
+      displayName: cfg.device.name,
+      deviceType: cfg.matter.deviceTypes.BridgedNode,
+      context: cfg.device,
+      parts: parts,
+    };
+  }
+
+  private configure(cfg: DeviceConfiguration): AccessoryConfig {
+    const device = DEVICE_TYPES[cfg.device.type];
+    if (device) {
+      return this.configureDevice(cfg, device);
+    } else if (cfg.device.type === 'SENSOR') {
+      return this.configureSensor(cfg);
+    } else if (cfg.device.type === 'CUSTOM') {
+      if (cfg.device.custom) {
+        try {
+          const ajv = new Ajv({ allErrors: true, allowUnionTypes: true });
+          const validateCustomDevice = ajv.compile(tasmotaDeviceSchema);
+          const rawDevice = JSON.parse(cfg.device.custom);
+          const isValid = validateCustomDevice(rawDevice);
+          if (isValid) {
+            const customDevice = rawDevice as unknown as TasmotaDeviceDefinition;
+            return this.configureDevice(cfg, customDevice);
+          } else {
+            const errorDetails = ajv.errorsText(validateCustomDevice.errors, { separator: '\n - ' });
+            cfg.log.error(`Custom JSON configuration validation failed:\n - ${errorDetails}`);
+          }
+        } catch (err) {
+          cfg.log.error(`error parsing custom JSON: ${err}`);
+        }
+      }
+    }
     throw new Error('Incorrect device definition!');
   }
 

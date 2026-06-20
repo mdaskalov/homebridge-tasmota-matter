@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "DevicePartsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "clusters": {
+          "additionalProperties": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "deviceType": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "handlers": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "$ref": "#/definitions/TasmotaCommand"
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "updates": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TasmotaResponse"
+              },
+              {
+                "items": {
+                  "$ref": "#/definitions/TasmotaResponse"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "deviceType",
+        "id"
+      ],
+      "type": "object"
+    },
+    "TasmotaCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "type": "string"
+        },
+        "res": {
+          "$ref": "#/definitions/TasmotaResponse"
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "type": "object"
+    },
+    "TasmotaResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "boolean"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "update": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "properties": {
+    "clusters": {
+      "additionalProperties": {
+        "additionalProperties": {},
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "deviceType": {
+      "type": "string"
+    },
+    "handlers": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/definitions/TasmotaCommand"
+        },
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "parts": {
+      "items": {
+        "$ref": "#/definitions/DevicePartsSchema"
+      },
+      "type": "array"
+    },
+    "updates": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TasmotaResponse"
+          },
+          {
+            "items": {
+              "$ref": "#/definitions/TasmotaResponse"
+            },
+            "type": "array"
+          }
+        ]
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "deviceType"
+  ],
+  "type": "object"
+}
