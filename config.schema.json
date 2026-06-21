@@ -26,6 +26,7 @@
               "type": "string",
               "enum": [
                 "SWITCH",
+                "OUTLET",
                 "LIGHTBULB",
                 "LIGHTBULB_B",
                 "LIGHTBULB_B_CH",
@@ -110,6 +111,7 @@
                   "key": "devices[].type",
                   "titleMap": {
                     "SWITCH": "Switch",
+                    "OUTLET": "Outlet",
                     "LIGHTBULB": "Light",
                     "LIGHTBULB_B": "Dimmable Light",
                     "LIGHTBULB_CH": "Dimmable Light (channel)",
