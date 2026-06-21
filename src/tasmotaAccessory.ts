@@ -13,8 +13,7 @@ import { TypeMapper } from './typeMapper';
 import Ajv from 'ajv';
 import tasmotaDeviceSchema from './schemas/tasmota-device.json';
 
-const READ_TIMEOUT = 1000;
-const EXEC_TIMEOUT = 1000;
+const READ_TIMEOUT = 3000;
 const RETRY_TIMEOUT = 30000;
 
 interface AccessoryConfig {
@@ -258,7 +257,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const path = this.typeMapper.expand(command.res?.path || cmd);
     try {
       let response = '';
-      await this.mqtt.read(reqTopic, message, resTopic, EXEC_TIMEOUT, async (message) => {
+      await this.mqtt.read(reqTopic, message, resTopic, READ_TIMEOUT, async (message) => {
         const res = TypeMapper.getValueByPath(message, path);
         if (res === undefined) {
           const msg = `${label} :- expecting ${path}, ignored: ${message}`;
