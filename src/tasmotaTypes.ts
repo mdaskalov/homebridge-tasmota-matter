@@ -77,6 +77,23 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
       onOff: { path: 'POWER{idx}' },
     },
   },
+  OUTLET: {
+    deviceType: 'OnOffOutlet',
+    clusters: {
+      onOff: {
+        onOff: false,
+      },
+    },
+    handlers: {
+      onOff: {
+        on: { cmd: 'POWER{idx} ON' },
+        off: { cmd: 'POWER{idx} OFF' },
+      },
+    },
+    updates: {
+      onOff: { path: 'POWER{idx}' },
+    },
+  },
   LIGHTBULB: {
     deviceType: 'OnOffLight',
     clusters: {
