@@ -129,12 +129,12 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
         off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        moveToLevelWithOnOff: { cmd: 'Dimmer {bri}' },
+        moveToLevelWithOnOff: { cmd: 'Dimmer{idx} {bri}' },
       },
     },
     updates: {
       onOff: { path: 'POWER{idx}' },
-      levelControl: { path: 'Dimmer' },
+      levelControl: { path: 'Dimmer{idx}' },
     },
   },
   LIGHTBULB_B_CH: {
@@ -188,7 +188,7 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
         off: { cmd: 'POWER{idx} OFF' },
       },
       levelControl: {
-        moveToLevelWithOnOff: { cmd: 'Dimmer {bri}' },
+        moveToLevelWithOnOff: { cmd: 'Dimmer{idx} {bri}' },
       },
       colorControl: {
         moveToColorTemperatureLogic: { cmd: 'CT {ct}', res: { path: 'CT' } },
@@ -197,7 +197,7 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     updates: {
       onOff: { path: 'POWER{idx}' },
-      levelControl: { path: 'Dimmer' },
+      levelControl: { path: 'Dimmer{idx}' },
       colorControl: { path: 'CT' },
     },
   },
