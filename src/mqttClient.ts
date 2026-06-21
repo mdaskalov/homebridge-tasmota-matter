@@ -162,47 +162,39 @@ export class MQTTClient {
     this.log.debug('MQTT: Published: %s %s', topic, message);
   }
 
-  read(reqTopic: string, message?: string, resTopic = reqTopic, timeout: number = 5000, callback?: ReadCallback) {
-    return new Promise((resolve: (msg: string) => void, reject: (err: string) => void) => {
-      const start = Date.now();
+  read(reqTopic: string, message?: string, resTopic?: string, timeout?: number, callback?: ReadCallback): Promise<string | undefined> {
+    return new Promise<string | undefined>((resolve) => {
+      const topic = resTopic ?? reqTopic;
+      const ms = timeout ?? 5000;
       let timeoutTimer: NodeJS.Timeout | undefined;
       let handlerId: string | undefined;
 
-      const cleanup = () => {
-        if (timeoutTimer) {
-          clearTimeout(timeoutTimer);
-          timeoutTimer = undefined;
-        }
+      const done = (value: string | undefined, errorMsg?: string) => {
+        clearTimeout(timeoutTimer);
+        timeoutTimer = undefined;
         if (handlerId) {
           this.unsubscribe(handlerId);
           handlerId = undefined;
         }
+        if (errorMsg) this.log.error(errorMsg);
+        resolve(value);
       };
 
+      timeoutTimer = setTimeout(() => done(undefined, `MQTT: Read timeout after ${ms}ms on ${topic}`), ms);
       handlerId = this.subscribe(
-        resTopic,
+        topic,
         async (msg) => {
-          let cbResponse: boolean | void;
           try {
-            cbResponse = callback !== undefined ? await callback(msg) : true;
+            const cbResult = callback ? await callback(msg) : true;
+            if (cbResult !== false) done(msg);
+            return cbResult;
           } catch (err) {
-            cleanup();
-            reject(`MQTT: Callback error: ${err}`);
-            return true; // consume
+            done(undefined, `MQTT: Callback error: ${err}`);
+            return true;
           }
-          if (cbResponse !== false) {
-            cleanup();
-            resolve(msg);
-          }
-          return cbResponse;
         },
         true,
       );
-      timeoutTimer = setTimeout(() => {
-        const elapsed = Date.now() - start;
-        cleanup();
-        reject(`MQTT: Read timeout after ${elapsed}ms`);
-      }, timeout);
 
       if (message !== undefined) {
         this.publish(reqTopic, message);

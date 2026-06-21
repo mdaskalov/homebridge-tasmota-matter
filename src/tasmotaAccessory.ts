@@ -73,18 +73,18 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.parts = accessoryConfig.parts;
   }
 
-  static async getProperty(cfg: DeviceConfiguration, property: string, path?: string, res?: string): Promise<string | undefined> {
+  static async getProperty(cfg: DeviceConfiguration, property: string, path?: string, res?: string): Promise<string> {
     const topic = cfg.device.topic;
     const [cmd, ...rest] = property.split(' ');
     const payload = rest.join(' ');
     const reqTopic = `cmnd/${topic}/${cmd}`;
     const resTopic = `stat/${topic}/${res || 'RESULT'}`;
-    try {
-      const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
-      return TypeMapper.getValueByPath(response, path || property);
-    } catch (err) {
-      throw new Error(`Error reading property ${property} from ${topic}: ${err}`);
+    const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
+    const result = TypeMapper.getValueByPath(response ?? '', path || property);
+    if (!result) {
+      throw new Error(`Error reading property ${property} from ${topic}`);
     }
+    return result;
   }
 
   static async create(cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
