@@ -16,10 +16,8 @@ import tasmotaDeviceSchema from './schemas/tasmota-device.json';
 const READ_TIMEOUT = 3000;
 const RETRY_TIMEOUT = 30000;
 
-interface AccessoryConfig {
-  displayName: string;
-  deviceType: EndpointType;
-  context: Device;
+interface AccessoryConfiguration {
+  deviceType?: EndpointType;
   clusters?: MatterAccessory<Device>['clusters'];
   handlers?: MatterAccessory<Device>['handlers'];
   parts?: MatterAccessory<Device>['parts'];
@@ -57,16 +55,17 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.logUnexpected = cfg.logUnexpected;
 
     const accessoryConfig = this.configure(cfg);
+    const { topic, type, index, name } = cfg.device;
 
     this.UUID = cfg.uuid;
-    this.displayName = accessoryConfig.displayName;
-    this.deviceType = accessoryConfig.deviceType;
+    this.displayName = name;
+    this.deviceType = accessoryConfig.deviceType ?? cfg.matter.deviceTypes.BridgedNode;
     this.serialNumber = cfg.serialNumber ?? 'Unknown';
     this.manufacturer = cfg.manufacturer ?? 'Unknown';
     this.model = cfg.model ?? 'Unknown';
     this.firmwareRevision = cfg.firmwareRevision ?? 'Unknown';
     this.hardwareRevision = '1.0';
-    this.context = accessoryConfig.context;
+    this.context = { topic, type, index, name };
     this.clusters = accessoryConfig.clusters;
     this.handlers = accessoryConfig.handlers;
     this.parts = accessoryConfig.parts;
@@ -153,7 +152,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.configureUpdateHandlers(cfg, handlers, partId);
   }
 
-  private configureDevice(cfg: DeviceConfiguration, device: TasmotaDeviceDefinition): AccessoryConfig {
+  private configureDevice(cfg: DeviceConfiguration, device: TasmotaDeviceDefinition): AccessoryConfiguration {
     if (Array.isArray(device.parts) && device.parts.length > 0) {
       const parts: MatterAccessory<Device>['parts'] = [];
       device.parts.forEach((partDef, index) => {
@@ -168,25 +167,18 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
         this.configureUpdates(cfg, partDef, partID);
         parts.push(part);
       });
-      return {
-        displayName: cfg.device.name,
-        deviceType: cfg.matter.deviceTypes.BridgedNode,
-        context: cfg.device,
-        parts: parts,
-      };
+      return { parts };
     } else {
       this.configureUpdates(cfg, device);
       return {
-        displayName: cfg.device.name,
         deviceType: this.typeMapper.toEndpointType(device.deviceType),
-        context: cfg.device,
         clusters: device.clusters,
         handlers: this.configureHandlers(cfg, device),
       };
     }
   }
 
-  private configureSensor(cfg: DeviceConfiguration): AccessoryConfig {
+  private configureSensor(cfg: DeviceConfiguration): AccessoryConfiguration {
     const parts: MatterAccessory<Device>['parts'] = [];
     const deviceSensors = JSON.parse(cfg.deviceSensors || '');
     if (deviceSensors !== undefined) {
@@ -213,15 +205,10 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     if (parts.length === 0) {
       throw new Error('Unable to autodetect sensors informtaion');
     }
-    return {
-      displayName: cfg.device.name,
-      deviceType: cfg.matter.deviceTypes.BridgedNode,
-      context: cfg.device,
-      parts: parts,
-    };
+    return { parts };
   }
 
-  private configure(cfg: DeviceConfiguration): AccessoryConfig {
+  private configure(cfg: DeviceConfiguration): AccessoryConfiguration {
     const device = DEVICE_TYPES[cfg.device.type];
     if (device) {
       return this.configureDevice(cfg, device);
