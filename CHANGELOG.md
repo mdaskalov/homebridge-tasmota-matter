@@ -2,7 +2,7 @@
 
 All notable changes will be documented in this file.
 
-## v0.0.15
+## v0.0.16
 - Added outlet
 - Simplified accessory configuration
 - Updated endpoint (deviceType) mappers
