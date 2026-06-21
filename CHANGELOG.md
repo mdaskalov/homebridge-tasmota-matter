@@ -2,6 +2,10 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.14
+- Cleanup
+- Improved timeout and error handling
+
 ## v0.0.12
 - Fully implemented RGB and RGBCCT lights
 - Implemented multipart device

@@ -47,7 +47,7 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
 
   private deviceDescription(device: Device): string {
     const index = device.index === undefined ? '' : `(${device.index})`;
-    return `${device.name} ${device.topic} - ${device.type} ${index}`;
+    return `${device.name} (${device.topic}) - ${device.type} ${index}`;
   }
 
   private async discoverTasmotaDevices() {
