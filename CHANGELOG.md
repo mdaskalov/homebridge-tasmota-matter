@@ -2,6 +2,12 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.15
+- Added outlet
+- Simplified accessory configuration
+- Updated endpoint (deviceType) mappers
+- Increased read timeout
+
 ## v0.0.14
 - Cleanup
 - Improved timeout and error handling
