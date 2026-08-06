@@ -138,6 +138,7 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
   },
   LIGHTBULB_B_CH: {
+    // Use SetOption68 1 -> Separate pwm channels
     deviceType: 'DimmableLight',
     clusters: {
       onOff: {
@@ -360,6 +361,42 @@ export const DEVICE_TYPES: Record<string, TasmotaDeviceDefinition> = {
     },
     updates: {
       doorLock: { path: 'POWER{idx}' },
+    },
+  },
+  BLIND: {
+    // Use SetOption68 1 -> Separate pwm channels
+    deviceType: 'WindowCovering',
+    clusters: {
+      windowCovering: {
+        targetPositionLiftPercent100ths: 5000,
+        currentPositionLiftPercent100ths: 5000,
+        operationalStatus: {
+          global: 0,
+          lift: 0,
+          tilt: 0,
+        },
+        endProductType: 0,
+        configStatus: {
+          operational: true,
+          onlineReserved: true,
+          liftMovementReversed: false,
+          liftPositionAware: true,
+          tiltPositionAware: false,
+          liftEncoderControlled: true,
+          tiltEncoderControlled: false,
+        },
+      },
+    },
+    handlers: {
+      windowCovering: {
+        goToLiftPercentage: { cmd: 'Channel{idx} {lift}' },
+        upOrOpen: { cmd: 'Channel{idx} 100' },
+        downOrClose: { cmd: 'Channel{idx} 0' },
+        stopMotion: undefined,
+      },
+    },
+    updates: {
+      windowCovering: { path: 'Channel{idx}' },
     },
   },
 };

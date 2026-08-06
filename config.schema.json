@@ -36,9 +36,10 @@
                 "BUTTON",
                 "BUTTON_SW",
                 "CONTACT",
-                "SENSOR",
                 "VALVE",
                 "LOCK",
+                "BLIND",
+                "SENSOR",
                 "CUSTOM"
               ]
             },
@@ -114,16 +115,16 @@
                     "OUTLET": "Outlet",
                     "LIGHTBULB": "Light",
                     "LIGHTBULB_B": "Dimmable Light",
-                    "LIGHTBULB_CH": "Dimmable Light (channel)",
+                    "LIGHTBULB_B_CH": "Dimmable Light (channel)",
                     "LIGHTBULB_B_CT": "CCT Light",
                     "LIGHTBULB_B_HS": "RGB Light",
                     "LIGHTBULB_B_HS_CT": "RGBCCT Light",
-                    "LIGHTBULB_B_CH": "PWM Channel",
-                    "VALVE": "Water valve",
-                    "LOCK": "Lock Mechanism",
                     "BUTTON": "Button",
                     "BUTTON_SW": "Button (switch)",
                     "CONTACT": "Contact sensor",
+                    "VALVE": "Water valve",
+                    "LOCK": "Lock Mechanism",
+                    "BLIND": "Window Covering",
                     "SENSOR": "Autodetect sensors",
                     "CUSTOM": "Custom definition"
                   }

@@ -73,6 +73,21 @@ export class TypeMapper {
       const stateValue = value === 'ON';
       await this.updateState(this.matter.clusterNames.BooleanState, { stateValue }, partId);
     },
+    windowCovering: async (value, partId?: string) => {
+      const lift = Math.round((100 - Number(value)) * 100);
+      await this.updateState(
+        this.matter.clusterNames.WindowCovering,
+        {
+          currentPositionLiftPercent100ths: lift,
+          targetPositionLiftPercent100ths: lift,
+        },
+        partId,
+      );
+    },
+    valveConfigurationAndControl: async (value, partId?: string) => {
+      const currentState = value === 'ON' ? 1 : 0;
+      await this.updateState(this.matter.clusterNames.ValveConfigurationAndControl, { currentState }, partId);
+    },
     temperatureMeasurement: async (value, partId?: string) => {
       const measuredValue = Math.round(Number(value) * 100);
       await this.updateState(this.matter.clusterNames.TemperatureMeasurement, { measuredValue }, partId);
@@ -80,10 +95,6 @@ export class TypeMapper {
     relativeHumidityMeasurement: async (value, partId?: string) => {
       const measuredValue = Math.round(Number(value) * 100);
       await this.updateState(this.matter.clusterNames.RelativeHumidityMeasurement, { measuredValue }, partId);
-    },
-    valveConfigurationAndControl: async (value, partId?: string) => {
-      const currentState = value === 'ON' ? 1 : 0;
-      await this.updateState(this.matter.clusterNames.ValveConfigurationAndControl, { currentState }, partId);
     },
   };
 
@@ -124,6 +135,14 @@ export class TypeMapper {
       },
       close: () => {
         this.set('onOff', 'OFF');
+      },
+    },
+    windowCovering: {
+      goToLiftPercentage: (args) => {
+        this.set('lift', Math.round(100 - args.liftPercent100thsValue / 100));
+      },
+      goToTiltPercentage: (args) => {
+        this.set('tilt', Math.round(100 - args.tiltPercent100thsValue / 100));
       },
     },
   };

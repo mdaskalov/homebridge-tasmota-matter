@@ -1,4 +1,4 @@
-import { Logger, PlatformConfig } from 'homebridge';
+import { Logging, PlatformConfig } from 'homebridge';
 import { IClientOptions, MqttClient, connect } from 'mqtt';
 
 type TopicCallback = (msg: string, topic: string) => Promise<boolean | void>; // response handler consumes message if not false
@@ -17,8 +17,8 @@ export class MQTTClient {
   private client: MqttClient;
 
   constructor(
-    private log: Logger,
-    private config: PlatformConfig,
+    private log: Logging,
+    config: PlatformConfig,
   ) {
     const broker = config.mqttBroker || 'localhost';
     const options: IClientOptions = {
@@ -135,7 +135,7 @@ export class MQTTClient {
       if (handlersCount === 0) {
         this.client.unsubscribe(handler.topic);
         this.log.debug(
-          'MQTT: Unubscribed topic: %s, %s: %s, handler(s): %d (%d response)',
+          'MQTT: Unsubscribed topic: %s, %s: %s, handler(s): %d (%d response)',
           handler.topic,
           response ? 'responseHandler' : 'Handler',
           handler.id,
