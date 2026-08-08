@@ -64,7 +64,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.manufacturer = cfg.manufacturer ?? 'Unknown';
     this.model = cfg.model ?? 'Unknown';
     this.firmwareRevision = cfg.firmwareRevision ?? 'Unknown';
-    this.hardwareRevision = '1.0';
+    this.hardwareRevision = cfg.hardwareRevision ?? '1.0';
     this.context = { topic, type, index, name };
     this.clusters = accessoryConfig.clusters;
     this.handlers = accessoryConfig.handlers;
