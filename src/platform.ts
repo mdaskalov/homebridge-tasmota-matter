@@ -50,7 +50,32 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
     return `${device.name} (${device.topic}) - ${device.type} ${index}`;
   }
 
+  private deviceConfiguration(device: Device, restoredAccessory?: MatterAccessory<Device>): DeviceConfiguration {
+    return {
+      log: this.log,
+      matter: this.matter,
+      mqtt: this.mqttClient,
+      uuid: this.deviceUUID(device),
+      device,
+      logTimeouts: this.config.logTimeouts,
+      logUnexpected: this.config.logUnexpected,
+      serialNumber: restoredAccessory?.serialNumber,
+      manufacturer: restoredAccessory?.manufacturer,
+      model: restoredAccessory?.model,
+      firmwareRevision: restoredAccessory?.firmwareRevision,
+      hardwareRevision: restoredAccessory?.hardwareRevision,
+      deviceSensors: restoredAccessory?.context?.deviceSensors,
+    };
+  }
+
+  private async register(uuid: string, instance: TasmotaAccessory, restored: boolean, description: string) {
+    this.activeAccessories.set(uuid, instance);
+    await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [instance.toAccessory()]);
+    this.log.info(`${restored ? 'Restored' : 'Added'} accessory: ${description}`);
+  }
+
   private async discoverTasmotaDevices() {
+    const deferredSensors: Array<{ cfg: DeviceConfiguration; restored: boolean; description: string }> = [];
     for (const device of this.config.devices ?? []) {
       const uuid = this.deviceUUID(device);
       const description = this.deviceDescription(device);
@@ -58,25 +83,14 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
       if (restoredAccessory) {
         this.configuredAccessories.delete(uuid);
       }
-      const deviceConfiguration: DeviceConfiguration = {
-        log: this.log,
-        matter: this.matter,
-        mqtt: this.mqttClient,
-        uuid,
-        device,
-        logTimeouts: this.config.logTimeouts,
-        logUnexpected: this.config.logUnexpected,
-        serialNumber: restoredAccessory?.serialNumber,
-        manufacturer: restoredAccessory?.manufacturer,
-        model: restoredAccessory?.model,
-        firmwareRevision: restoredAccessory?.firmwareRevision,
-        hardwareRevision: restoredAccessory?.hardwareRevision,
-      };
-      const tasmotaInstance = await TasmotaAccessory.create(deviceConfiguration);
-      if (tasmotaInstance) {
-        this.activeAccessories.set(uuid, tasmotaInstance);
-        await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [tasmotaInstance.toAccessory()]);
-        this.log.info(`${restoredAccessory ? 'Restored' : 'Added'} accessory: ${description}`);
+      const cfg = this.deviceConfiguration(device, restoredAccessory);
+      if (device.type === 'SENSOR' && cfg.deviceSensors === undefined) {
+        deferredSensors.push({ cfg, restored: restoredAccessory !== undefined, description });
+        continue;
+      }
+      const instance = await TasmotaAccessory.create(cfg);
+      if (instance) {
+        await this.register(uuid, instance, restoredAccessory !== undefined, description);
       } else {
         this.log.error(`Unable to register accessory: ${description}`);
       }
@@ -86,6 +100,29 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
       await this.matter.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessoryToRemove]);
       const description = this.deviceDescription(accessoryToRemove.context);
       this.log.info(`Removed accessory: ${description}`);
+    }
+    void this.registerDeferredSensors(deferredSensors).then(() => this.refreshDeviceInfo());
+  }
+
+  private async registerDeferredSensors(deferred: Array<{ cfg: DeviceConfiguration; restored: boolean; description: string }>) {
+    await Promise.all(
+      deferred.map(async ({ cfg, restored, description }) => {
+        const instance = await TasmotaAccessory.create(cfg);
+        if (instance) {
+          await this.register(cfg.uuid, instance, restored, description);
+        } else {
+          this.log.error(`Unable to register accessory: ${description}`);
+        }
+      }),
+    );
+  }
+
+  private async refreshDeviceInfo() {
+    for (const instance of this.activeAccessories.values()) {
+      const changed = await instance.refreshInfo();
+      if (changed) {
+        await this.matter.updatePlatformAccessories([instance.toAccessory()]);
+      }
     }
   }
 }
