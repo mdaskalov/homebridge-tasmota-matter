@@ -38,11 +38,11 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
   }
 
   private deviceUUID(device: Device): string {
-    const identificator =
+    const identifier =
       `${device.topic}-${device.type}` +
       (device.index !== undefined ? `-${device.index}` : '') +
       (device.custom !== undefined ? device.custom : '');
-    return this.matter.uuid.generate(identificator);
+    return this.matter.uuid.generate(identifier);
   }
 
   private deviceDescription(device: Device): string {
