@@ -174,12 +174,12 @@
             {
               "key": "mqttUsername",
               "title": "Username",
-              "placeholder": "MMQTT Broker username if passwort protected"
+              "placeholder": "MQTT Broker username if password protected"
             },
             {
               "key": "mqttPassword",
               "title": "Password",
-              "placeholder": "MQTT Broker passwort if passwort protected",
+              "placeholder": "MQTT Broker password if password protected",
               "format": "password"
             }
           ]
