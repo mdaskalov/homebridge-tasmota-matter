@@ -79,9 +79,6 @@
         },
         "topic": {
           "type": "string"
-        },
-        "update": {
-          "type": "boolean"
         }
       },
       "type": "object"

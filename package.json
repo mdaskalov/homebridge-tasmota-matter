@@ -12,14 +12,14 @@
     "url": "https://github.com/mdaskalov/homebridge-tasmota-matter/issues"
   },
   "engines": {
-    "node": "^v22 || ^v24",
+    "node": "^22 || ^24",
     "homebridge": "^1.6.0 || ^2.0.0"
   },
   "main": "dist/index.js",
   "scripts": {
     "lint": "eslint src/**.ts --max-warnings=0",
     "watch": "npm run build && npm link && nodemon",
-    "generateSchema": "ts-json-schema-generator --path 'src/shemas/tasmotaDevice.ts' --type 'TasmotaDeviceSchema' --out 'src/schemas/tasmota-device.json' --no-top-ref",
+    "generateSchema": "ts-json-schema-generator --path 'src/schemas/tasmotaDevice.ts' --type 'TasmotaDeviceSchema' --out 'src/schemas/tasmota-device.json' --no-top-ref",
     "build": "rimraf ./dist && tsc",
     "prepublishOnly": "npm run lint && npm run build",
     "test": "npm run build && node dist/index.js && echo \"No syntax errors! (node $(node -v))\""
