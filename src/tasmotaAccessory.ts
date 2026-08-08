@@ -180,8 +180,8 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
 
   private configureSensor(cfg: DeviceConfiguration): AccessoryConfiguration {
     const parts: MatterAccessory<Device>['parts'] = [];
-    const deviceSensors = JSON.parse(cfg.deviceSensors || '');
-    if (deviceSensors !== undefined) {
+    if (cfg.deviceSensors) {
+      const deviceSensors = JSON.parse(cfg.deviceSensors);
       for (const [deviceType, sensorDefinition] of Object.entries(SENSOR_TYPES)) {
         const partId = `${deviceType}Part`;
         const handlers: UpdateHandler[] = [];
@@ -203,7 +203,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
       }
     }
     if (parts.length === 0) {
-      throw new Error('Unable to autodetect sensors informtaion');
+      throw new Error('Unable to autodetect sensors information');
     }
     return { parts };
   }
