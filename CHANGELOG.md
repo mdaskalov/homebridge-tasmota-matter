@@ -2,6 +2,12 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.18
+- Consolidated device information and sensor reads into a single `create()` step with unified retry
+- Removed the deferred sensor registration and separate `refreshInfo()` pass
+- Re-create accessories whose cached device information is stale (`Unknown`)
+- Stopped persisting `deviceSensors` in the accessory context
+
 ## v0.0.16
 - Added outlet
 - Simplified accessory configuration

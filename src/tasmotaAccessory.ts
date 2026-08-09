@@ -38,22 +38,19 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   public readonly UUID: string;
   public readonly displayName: string;
   public readonly deviceType: EndpointType;
-  public serialNumber: string;
-  public manufacturer: string;
-  public model: string;
-  public firmwareRevision: string;
+  public readonly serialNumber: string;
+  public readonly manufacturer: string;
+  public readonly model: string;
+  public readonly firmwareRevision: string;
   public readonly hardwareRevision: string;
   public readonly context: Device;
   public readonly clusters?: MatterAccessory<Device>['clusters'];
   public readonly handlers?: MatterAccessory<Device>['handlers'];
   public readonly parts?: MatterAccessory<Device>['parts'];
-  private readonly cfg: DeviceConfiguration;
-  private readonly infoRestored: boolean;
 
   private constructor(cfg: DeviceConfiguration) {
     this.log = cfg.log;
     this.mqtt = cfg.mqtt;
-    this.cfg = cfg;
     this.typeMapper = new TypeMapper(cfg);
     this.logUnexpected = cfg.logUnexpected;
 
@@ -68,8 +65,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.model = cfg.model ?? 'Unknown';
     this.firmwareRevision = cfg.firmwareRevision ?? 'Unknown';
     this.hardwareRevision = cfg.hardwareRevision ?? '1.0';
-    this.infoRestored = cfg.serialNumber !== undefined;
-    this.context = { topic, type, index, name, deviceSensors: cfg.deviceSensors };
+    this.context = { topic, type, index, name };
     this.clusters = accessoryConfig.clusters;
     this.handlers = accessoryConfig.handlers;
     this.parts = accessoryConfig.parts;
@@ -89,70 +85,39 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     return result;
   }
 
-  static async create(cfg: DeviceConfiguration): Promise<TasmotaAccessory | undefined> {
-    if (cfg.device.type === 'SENSOR' && cfg.deviceSensors === undefined) {
-      cfg.deviceSensors = await this.fetchSensors(cfg);
-      if (cfg.deviceSensors === undefined) {
-        return undefined;
+  static async create(cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
+    const retriesCount = retries ?? 0;
+    try {
+      if (cfg.serialNumber === undefined || cfg.serialNumber === 'Unknown') {
+        cfg.serialNumber = (await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5')) ?? cfg.uuid.replace(/-/g, '');
       }
+      if (cfg.manufacturer === undefined || cfg.manufacturer === 'Unknown') {
+        cfg.manufacturer = (await this.getProperty(cfg, 'MODULE0', 'Module.0')) ?? 'Tasmota';
+      }
+      if (cfg.model === undefined || cfg.model === 'Unknown') {
+        cfg.model = (await this.getProperty(cfg, 'Hostname')) ?? 'Unknown';
+      }
+      if (cfg.firmwareRevision === undefined || cfg.firmwareRevision === 'Unknown') {
+        cfg.firmwareRevision = ((await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')) ?? 'Unknown').split('(')[0];
+      }
+      if (cfg.device.type === 'SENSOR') {
+        cfg.deviceSensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
+      }
+    } catch (err) {
+      if (cfg.logTimeouts) {
+        cfg.log.warn(`${cfg.device.name}: error configuring accessory information (${retriesCount + 1}): ${err}`);
+      }
+      if (retriesCount < 2) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_TIMEOUT));
+        return this.create(cfg, retriesCount + 1);
+      }
+      return undefined;
     }
     try {
       return new TasmotaAccessory(cfg);
     } catch (err) {
       cfg.log.error(`Device of type ${cfg.device.type} not created: ${err}`);
     }
-  }
-
-  private static async fetchSensors(cfg: DeviceConfiguration, retries = 0): Promise<string | undefined> {
-    try {
-      return await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
-    } catch (err) {
-      if (cfg.logTimeouts) {
-        cfg.log.warn(`${cfg.device.name}: error reading sensor information (${retries + 1}): ${err}`);
-      }
-      if (retries < 2) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_TIMEOUT));
-        return this.fetchSensors(cfg, retries + 1);
-      }
-      return undefined;
-    }
-  }
-
-  async refreshInfo(): Promise<boolean> {
-    if (this.infoRestored) {
-      return false;
-    }
-    const cfg = this.cfg;
-    let changed = false;
-    try {
-      const serialNumber = (await TasmotaAccessory.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5')) ?? cfg.uuid.replace(/-/g, '');
-      const manufacturer = (await TasmotaAccessory.getProperty(cfg, 'MODULE0', 'Module.0')) ?? 'Tasmota';
-      const model = (await TasmotaAccessory.getProperty(cfg, 'Hostname')) ?? 'Unknown';
-      const firmwareRevision = ((await TasmotaAccessory.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')) ?? 'Unknown').split(
-        '(',
-      )[0];
-      if (this.serialNumber !== serialNumber) {
-        this.serialNumber = serialNumber;
-        changed = true;
-      }
-      if (this.manufacturer !== manufacturer) {
-        this.manufacturer = manufacturer;
-        changed = true;
-      }
-      if (this.model !== model) {
-        this.model = model;
-        changed = true;
-      }
-      if (this.firmwareRevision !== firmwareRevision) {
-        this.firmwareRevision = firmwareRevision;
-        changed = true;
-      }
-    } catch (err) {
-      if (cfg.logTimeouts) {
-        this.log.warn(`${cfg.device.name}: error reading device information: ${err}`);
-      }
-    }
-    return changed;
   }
 
   private configureHandlers(cfg: DeviceConfiguration, device: DeviceDefinition): MatterAccessory<Device>['handlers'] | undefined {

@@ -7,7 +7,6 @@ export type Device = {
   index?: string;
   custom?: string;
   name: string;
-  deviceSensors?: string;
 };
 
 export type DeviceConfiguration = {
