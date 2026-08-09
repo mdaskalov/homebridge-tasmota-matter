@@ -88,18 +88,10 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
   static async create(cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
     const retriesCount = retries ?? 0;
     try {
-      if (cfg.serialNumber === undefined || cfg.serialNumber === 'Unknown') {
-        cfg.serialNumber = (await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5')) ?? cfg.uuid.replace(/-/g, '');
-      }
-      if (cfg.manufacturer === undefined || cfg.manufacturer === 'Unknown') {
-        cfg.manufacturer = (await this.getProperty(cfg, 'MODULE0', 'Module.0')) ?? 'Tasmota';
-      }
-      if (cfg.model === undefined || cfg.model === 'Unknown') {
-        cfg.model = (await this.getProperty(cfg, 'Hostname')) ?? 'Unknown';
-      }
-      if (cfg.firmwareRevision === undefined || cfg.firmwareRevision === 'Unknown') {
-        cfg.firmwareRevision = ((await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')) ?? 'Unknown').split('(')[0];
-      }
+      cfg.serialNumber ??= await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5');
+      cfg.manufacturer ??= await this.getProperty(cfg, 'MODULE0', 'Module.0');
+      cfg.model ??= await this.getProperty(cfg, 'Hostname');
+      cfg.firmwareRevision ??= (await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')).split('(')[0];
       if (cfg.device.type === 'SENSOR') {
         cfg.deviceSensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
       }

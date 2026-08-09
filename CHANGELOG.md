@@ -2,6 +2,10 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.19
+- Fail-closed device creation: a device is only added once all its info queries succeed
+- Never unregister accessories to refresh device info
+
 ## v0.0.18
 - Consolidated device information and sensor reads into a single `create()` step with unified retry
 - Removed the deferred sensor registration and separate `refreshInfo()` pass

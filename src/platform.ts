@@ -50,12 +50,6 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
     return `${device.name} (${device.topic}) - ${device.type} ${index}`;
   }
 
-  private hasUnknownInfo(cfg: DeviceConfiguration): boolean {
-    return [cfg.serialNumber, cfg.manufacturer, cfg.model, cfg.firmwareRevision].some(
-      (value) => value === undefined || value === 'Unknown',
-    );
-  }
-
   private async discoverTasmotaDevices() {
     for (const device of this.config.devices ?? []) {
       const uuid = this.deviceUUID(device);
@@ -78,15 +72,11 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
         firmwareRevision: restoredAccessory?.firmwareRevision,
         hardwareRevision: restoredAccessory?.hardwareRevision,
       };
-      const staleInfo = restoredAccessory !== undefined && this.hasUnknownInfo(deviceConfiguration);
       const tasmotaInstance = await TasmotaAccessory.create(deviceConfiguration);
       if (tasmotaInstance) {
-        if (staleInfo) {
-          await this.matter.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [restoredAccessory!]);
-        }
         this.activeAccessories.set(uuid, tasmotaInstance);
         await this.matter.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [tasmotaInstance.toAccessory()]);
-        this.log.info(`${restoredAccessory && !staleInfo ? 'Restored' : 'Added'} accessory: ${description}`);
+        this.log.info(`${restoredAccessory ? 'Restored' : 'Added'} accessory: ${description}`);
       } else {
         this.log.error(`Unable to register accessory: ${description}`);
       }
