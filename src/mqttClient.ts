@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import { Logging, PlatformConfig } from 'homebridge';
 import { IClientOptions, MqttClient, connect } from 'mqtt';
 
@@ -15,12 +16,15 @@ export class MQTTClient {
   private responseHandlers: TopicHandler[] = [];
   private handlers: TopicHandler[] = [];
   private client: MqttClient;
+  private connectionState: 'connecting' | 'connected' | 'offline' = 'connecting';
+  private connectionWaiters: ((connected: boolean) => void)[] = [];
 
   constructor(
     private log: Logging,
     config: PlatformConfig,
   ) {
     const broker = config.mqttBroker || 'localhost';
+    const useTls = !!config.mqttTls;
     const options: IClientOptions = {
       clientId: 'homebridge-tasmota-matter_' + Math.random().toString(16).slice(2, 10),
       protocolId: 'MQTT',
@@ -32,8 +36,29 @@ export class MQTTClient {
       password: config.mqttPassword,
     };
 
-    this.client = connect('mqtt://' + broker, options);
-    this.client.on('error', (err) => this.log.error('MQTT: Error: %s', err.message));
+    if (useTls) {
+      options.rejectUnauthorized = config.mqttTlsRejectUnauthorized !== false;
+      const caCertPath = config.mqttCaCert as string | undefined;
+      if (caCertPath) {
+        try {
+          options.ca = readFileSync(caCertPath);
+        } catch (err) {
+          this.log.error('MQTT: Failed to read CA certificate at %s: %s', caCertPath, (err as Error).message);
+        }
+      }
+    }
+
+    this.client = connect((useTls ? 'mqtts://' : 'mqtt://') + broker, options);
+    this.client.on('connect', () => {
+      this.log.debug('MQTT: Connected to %s', broker);
+      this.setConnectionState('connected');
+    });
+    this.client.on('reconnect', () => this.log.warn('MQTT: Reconnecting to %s...', broker));
+    this.client.on('offline', () => {
+      this.log.warn('MQTT: Offline - broker %s unreachable', broker);
+      this.setConnectionState('offline');
+    });
+    this.client.on('error', (err) => this.log.error('MQTT: Connection error to %s: %s', broker, err.message));
     this.client.on('message', async (topic, message) => {
       const handlers = this.handlers.filter((h) => this.matchTopic(h, topic));
       const responseHandlers = this.responseHandlers.filter((h) => this.matchTopic(h, topic));
@@ -52,6 +77,24 @@ export class MQTTClient {
         }
       }
     });
+  }
+
+  private setConnectionState(state: 'connected' | 'offline') {
+    this.connectionState = state;
+    const waiters = this.connectionWaiters;
+    this.connectionWaiters = [];
+    for (const waiter of waiters) {
+      waiter(state === 'connected');
+    }
+  }
+
+  // Resolves true once connected, or false once the connection is known to be down. While the
+  // initial connection attempt is still pending, callers wait here instead of failing right away.
+  private waitForConnection(): Promise<boolean> {
+    if (this.connectionState !== 'connecting') {
+      return Promise.resolve(this.connectionState === 'connected');
+    }
+    return new Promise((resolve) => this.connectionWaiters.push(resolve));
   }
 
   shutdown() {
@@ -158,6 +201,10 @@ export class MQTTClient {
   }
 
   publish(topic: string, message: string) {
+    if (!this.client.connected) {
+      this.log.error('MQTT: Cannot publish to %s - not connected to broker', topic);
+      return;
+    }
     this.client.publish(topic, message);
     this.log.debug('MQTT: Published: %s %s', topic, message);
   }
@@ -180,25 +227,32 @@ export class MQTTClient {
         resolve(value);
       };
 
-      timeoutTimer = setTimeout(() => done(undefined, `MQTT: Read timeout after ${ms}ms on ${topic}`), ms);
-      handlerId = this.subscribe(
-        topic,
-        async (msg) => {
-          try {
-            const cbResult = callback ? await callback(msg) : true;
-            if (cbResult !== false) done(msg);
-            return cbResult;
-          } catch (err) {
-            done(undefined, `MQTT: Callback error: ${err}`);
-            return true;
-          }
-        },
-        true,
-      );
+      this.waitForConnection().then((connected) => {
+        if (!connected) {
+          done(undefined, `MQTT: Cannot read ${topic} - not connected to broker`);
+          return;
+        }
 
-      if (message !== undefined) {
-        this.publish(reqTopic, message);
-      }
+        timeoutTimer = setTimeout(() => done(undefined, `MQTT: Read timeout after ${ms}ms on ${topic}`), ms);
+        handlerId = this.subscribe(
+          topic,
+          async (msg) => {
+            try {
+              const cbResult = callback ? await callback(msg) : true;
+              if (cbResult !== false) done(msg);
+              return cbResult;
+            } catch (err) {
+              done(undefined, `MQTT: Callback error: ${err}`);
+              return true;
+            }
+          },
+          true,
+        );
+
+        if (message !== undefined) {
+          this.publish(reqTopic, message);
+        }
+      });
     });
   }
 }

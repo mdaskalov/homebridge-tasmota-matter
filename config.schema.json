@@ -74,6 +74,16 @@
       "mqttPassword": {
         "type": "string"
       },
+      "mqttTls": {
+        "type": "boolean"
+      },
+      "mqttTlsRejectUnauthorized": {
+        "type": "boolean",
+        "default": true
+      },
+      "mqttCaCert": {
+        "type": "string"
+      },
       "logTimeouts": {
         "type": "boolean"
       },
@@ -174,13 +184,36 @@
             {
               "key": "mqttUsername",
               "title": "Username",
-              "placeholder": "MQTT Broker username if password protected"
+              "placeholder": "MQTT Broker username"
             },
             {
               "key": "mqttPassword",
               "title": "Password",
-              "placeholder": "MQTT Broker password if password protected",
-              "format": "password"
+              "type": "password",
+              "placeholder": "MQTT Broker password"
+            }
+          ]
+        },
+        {
+          "key": "mqttTls",
+          "title": "Use TLS (mqtts://)",
+          "description": "Enable an encrypted connection to the MQTT broker"
+        },
+        {
+          "type": "fieldset",
+          "condition": {
+            "functionBody": "try { return model.mqttTls === true; } catch(e) { return false; }"
+          },
+          "items": [
+            {
+              "key": "mqttTlsRejectUnauthorized",
+              "title": "Verify broker certificate",
+              "description": "Uncheck to accept self-signed or otherwise unverifiable certificates without validation"
+            },
+            {
+              "key": "mqttCaCert",
+              "title": "Custom CA certificate path",
+              "placeholder": "Path to a PEM-encoded CA certificate file used to verify a self-signed broker certificate"
             }
           ]
         },
