@@ -244,7 +244,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const path = this.typeMapper.expand(command.res?.path || cmd);
     try {
       let response = '';
-      await this.mqtt.read(reqTopic, message, resTopic, READ_TIMEOUT, async (message) => {
+      await this.mqtt.read(reqTopic, message, resTopic, async (message) => {
         const res = TypeMapper.getValueByPath(message, path);
         if (res === undefined) {
           const msg = `${label} :- expecting ${path}, ignored: ${message}`;

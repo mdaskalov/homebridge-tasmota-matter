@@ -2,6 +2,8 @@ import { readFileSync } from 'fs';
 import { Logging, PlatformConfig } from 'homebridge';
 import { IClientOptions, MqttClient, connect } from 'mqtt';
 
+const READ_TIMEOUT = 3000;
+
 type TopicCallback = (msg: string, topic: string) => Promise<boolean | void>; // response handler consumes message if not false
 
 type ReadCallback = (msg: string) => Promise<boolean | void>; // true: consume, false: ignore
@@ -209,10 +211,10 @@ export class MQTTClient {
     this.log.debug('MQTT: Published: %s %s', topic, message);
   }
 
-  read(reqTopic: string, message?: string, resTopic?: string, timeout?: number, callback?: ReadCallback): Promise<string | undefined> {
+  read(reqTopic: string, message?: string, resTopic?: string, callback?: ReadCallback, timeout?: number): Promise<string | undefined> {
     return new Promise<string | undefined>((resolve) => {
       const topic = resTopic ?? reqTopic;
-      const ms = timeout ?? 5000;
+      const ms = timeout ?? READ_TIMEOUT;
       let timeoutTimer: NodeJS.Timeout | undefined;
       let handlerId: string | undefined;
 
