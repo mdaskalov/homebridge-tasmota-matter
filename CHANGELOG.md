@@ -2,6 +2,9 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.21
+- Raised minimum Homebridge requirement to `^2.4.0` — energy monitoring depends on Matter electrical-measurement auto-detection only available from that version on, and older Homebridge installs failed at runtime with `Behavior "electricalPowerMeasurement" is not present on this endpoint`
+
 ## v0.0.20
 - Added energy monitoring
 - Added MQTT TLS support (`mqttTls`, `mqttTlsRejectUnauthorized`, `mqttCaCert`) and connection state tracking
