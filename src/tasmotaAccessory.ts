@@ -10,10 +10,10 @@ import type {
 } from './tasmotaTypes';
 import { DEVICE_TYPES, SENSOR_TYPES } from './tasmotaTypes';
 import { TypeMapper } from './typeMapper';
+import { EnergyMonitor, initialElectricalClusterState } from './energyMonitor';
 import Ajv from 'ajv';
 import tasmotaDeviceSchema from './schemas/tasmota-device.json';
 
-const READ_TIMEOUT = 3000;
 const RETRY_TIMEOUT = 30000;
 
 interface AccessoryConfiguration {
@@ -60,11 +60,11 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     this.UUID = cfg.uuid;
     this.displayName = name;
     this.deviceType = accessoryConfig.deviceType ?? cfg.matter.deviceTypes.BridgedNode;
-    this.serialNumber = cfg.serialNumber ?? 'Unknown';
-    this.manufacturer = cfg.manufacturer ?? 'Unknown';
-    this.model = cfg.model ?? 'Unknown';
-    this.firmwareRevision = cfg.firmwareRevision ?? 'Unknown';
-    this.hardwareRevision = cfg.hardwareRevision ?? '1.0';
+    this.serialNumber = cfg.restored?.serialNumber ?? 'Unknown';
+    this.manufacturer = cfg.restored?.manufacturer ?? 'Unknown';
+    this.model = cfg.restored?.model ?? 'Unknown';
+    this.firmwareRevision = cfg.restored?.firmwareRevision ?? 'Unknown';
+    this.hardwareRevision = cfg.restored?.hardwareRevision ?? '1.0';
     this.context = { topic, type, index, name };
     this.clusters = accessoryConfig.clusters;
     this.handlers = accessoryConfig.handlers;
@@ -77,7 +77,7 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     const payload = rest.join(' ');
     const reqTopic = `cmnd/${topic}/${cmd}`;
     const resTopic = `stat/${topic}/${res || 'RESULT'}`;
-    const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic, READ_TIMEOUT);
+    const response = await cfg.mqtt.read(reqTopic, payload || '', resTopic);
     const result = TypeMapper.getValueByPath(response ?? '', path || property);
     if (!result) {
       throw new Error(`Error reading property ${property} from ${topic}`);
@@ -87,14 +87,13 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
 
   static async create(cfg: DeviceConfiguration, retries?: number): Promise<TasmotaAccessory | undefined> {
     const retriesCount = retries ?? 0;
+    cfg.restored ??= {};
     try {
-      cfg.serialNumber ??= await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5');
-      cfg.manufacturer ??= await this.getProperty(cfg, 'MODULE0', 'Module.0');
-      cfg.model ??= await this.getProperty(cfg, 'Hostname');
-      cfg.firmwareRevision ??= (await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')).split('(')[0];
-      if (cfg.device.type === 'SENSOR') {
-        cfg.deviceSensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
-      }
+      cfg.restored.serialNumber ??= await this.getProperty(cfg, 'STATUS 5', 'StatusNET.Mac', 'STATUS5');
+      cfg.restored.manufacturer ??= await this.getProperty(cfg, 'MODULE0', 'Module.0');
+      cfg.restored.model ??= await this.getProperty(cfg, 'Hostname');
+      cfg.restored.firmwareRevision ??= (await this.getProperty(cfg, 'STATUS 2', 'StatusFWR.Version', 'STATUS2')).split('(')[0];
+      cfg.deviceSensors = await this.getProperty(cfg, 'STATUS 10', 'StatusSNS', 'STATUS10');
     } catch (err) {
       if (cfg.logTimeouts) {
         cfg.log.warn(`${cfg.device.name}: error configuring accessory information (${retriesCount + 1}): ${err}`);
@@ -112,14 +111,18 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
     }
   }
 
-  private configureHandlers(cfg: DeviceConfiguration, device: DeviceDefinition): MatterAccessory<Device>['handlers'] | undefined {
+  private configureHandlers(
+    cfg: DeviceConfiguration,
+    device: DeviceDefinition,
+    partId?: string,
+  ): MatterAccessory<Device>['handlers'] | undefined {
     const handlers: MatterAccessory<Device>['handlers'] = {};
     for (const [clusterName, clusterHandlerMap] of Object.entries(device.handlers ?? {})) {
       const clusterHandlers: Record<string, (args: unknown) => Promise<void>> = {};
       for (const [command, tasmotaCommand] of Object.entries(clusterHandlerMap)) {
         clusterHandlers[command] = async (args) => {
           if (tasmotaCommand !== undefined) {
-            await this.typeMapper.fromMatter(args, clusterName, command);
+            await this.typeMapper.fromMatter(args, clusterName, command, partId);
             await this.execute(`${cfg.device.name}:${clusterName}:${command}`, tasmotaCommand);
           }
         };
@@ -162,19 +165,68 @@ export class TasmotaAccessory implements MatterAccessory<Device> {
           displayName: partDef.displayName || `${cfg.device.name}-part${index + 1}`,
           deviceType: this.typeMapper.toEndpointType(partDef.deviceType),
           clusters: partDef.clusters!,
-          handlers: this.configureHandlers(cfg, partDef),
+          handlers: this.configureHandlers(cfg, partDef, partID),
         };
         this.configureUpdates(cfg, partDef, partID);
+        this.configureEnergyMonitor(cfg, partDef, part, index, partID);
         parts.push(part);
       });
       return { parts };
     } else {
       this.configureUpdates(cfg, device);
-      return {
+      const accessoryConfig: AccessoryConfiguration = {
         deviceType: this.typeMapper.toEndpointType(device.deviceType),
         clusters: device.clusters,
         handlers: this.configureHandlers(cfg, device),
       };
+      const idxNum = Number(cfg.device.index);
+      const channelIndex = isNaN(idxNum) ? undefined : idxNum - 1;
+      this.configureEnergyMonitor(cfg, device, accessoryConfig, channelIndex);
+      return accessoryConfig;
+    }
+  }
+
+  private configureEnergyMonitor(
+    cfg: DeviceConfiguration,
+    device: DeviceDefinition,
+    target: { clusters?: MatterAccessory<Device>['clusters'] },
+    channelIndex?: number,
+    partId?: string,
+  ): void {
+    if (!device.clusters?.onOff || !cfg.deviceSensors) {
+      return;
+    }
+    let statusSns: Record<string, unknown>;
+    try {
+      statusSns = JSON.parse(cfg.deviceSensors);
+    } catch {
+      return;
+    }
+    const energy = statusSns.ENERGY;
+    if (!energy || typeof energy !== 'object') {
+      return;
+    }
+
+    target.clusters = {
+      ...target.clusters,
+      ...initialElectricalClusterState(energy as Record<string, unknown>, channelIndex),
+    };
+
+    const monitor = new EnergyMonitor({
+      log: this.log,
+      mqtt: this.mqtt,
+      matter: cfg.matter,
+      uuid: cfg.uuid,
+      topic: cfg.device.topic,
+      channelIndex,
+      partId,
+    });
+    this.typeMapper.setOnOffListener((onOff) => monitor.setOnOff(onOff), partId);
+    const restoredOnOff = partId
+      ? cfg.restored?.parts?.find((part) => part.id === partId)?.clusters?.onOff?.onOff
+      : cfg.restored?.clusters?.onOff?.onOff;
+    if (restoredOnOff) {
+      monitor.setOnOff(true);
     }
   }
 

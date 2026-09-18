@@ -14,7 +14,7 @@ type TasmotaValueMappers = {
 
 type HandlerArgs<T> = NonNullable<T> extends MatterCommandHandler<infer Attributes> ? Attributes : never;
 
-type Unmapper<Handler> = (attributes: HandlerArgs<Handler>) => Promise<void> | void;
+type Unmapper<Handler> = (attributes: HandlerArgs<Handler>, partId?: string) => Promise<void> | void;
 
 type MatterValueMapper = {
   [Cluster in keyof ClusterHandlerMap]?: {
@@ -22,11 +22,14 @@ type MatterValueMapper = {
   };
 };
 
+type OnOffListener = (onOff: boolean, partId?: string) => void;
+
 export class TypeMapper {
   private readonly log: Logger;
   private readonly uuid: string;
   private readonly matter: MatterAPI;
   private readonly variables: TemplateVariables;
+  private readonly onOffListeners = new Map<string | undefined, OnOffListener>();
 
   private readonly endpointMappers: EndpointMappers = {
     GenericSwitch: () =>
@@ -44,6 +47,7 @@ export class TypeMapper {
     onOff: async (value, partId?: string) => {
       const onOff = value === 'ON';
       await this.updateState(this.matter.clusterNames.OnOff, { onOff }, partId);
+      this.onOffListeners.get(partId)?.(onOff, partId);
     },
     doorLock: async (value, partId?: string) => {
       const lockState = value === 'ON' ? 1 : 2;
@@ -99,6 +103,10 @@ export class TypeMapper {
   };
 
   private readonly matterValueMappers: MatterValueMapper = {
+    onOff: {
+      on: (_, partId) => this.onOffListeners.get(partId)?.(true, partId),
+      off: (_, partId) => this.onOffListeners.get(partId)?.(false, partId),
+    },
     levelControl: {
       moveToLevel: (attrs) => {
         this.set('bri', attrs.level, 'brightness');
@@ -251,10 +259,14 @@ export class TypeMapper {
     }
   }
 
-  async fromMatter(attributes: unknown, cluster: string, command: string) {
+  async fromMatter(attributes: unknown, cluster: string, command: string, partId?: string) {
     const matterMapper = this.matterValueMappers[cluster]?.[command];
     if (matterMapper) {
-      await matterMapper(attributes);
+      await matterMapper(attributes, partId);
     }
+  }
+
+  setOnOffListener(listener: OnOffListener, partId?: string): void {
+    this.onOffListeners.set(partId, listener);
   }
 }

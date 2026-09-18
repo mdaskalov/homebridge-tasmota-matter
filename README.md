@@ -67,6 +67,12 @@ Devices flashed with Tasmota firmware (Outlet Switch, Lightbulb, RGB Stripe, But
 
 `mqttPassword` - MQTT Broker password if password protected.
 
+`mqttTls` - (optional) Connect to the MQTT Broker using TLS (`mqtts://`) (default: false).
+
+`mqttTlsRejectUnauthorized` - (optional) Verify the broker's TLS certificate. Set to `false` to accept self-signed or otherwise unverifiable certificates without validation (default: true).
+
+`mqttCaCert` - (optional) Path to a PEM-encoded custom CA certificate file, used to verify a self-signed broker certificate.
+
 `zigbee2tasmotaTopic` - Zigbee2Tasmota gateway/bridge base topic (default: zbbridge).
 
 `zigbee2mqttTopic` - Zigbee2MQTT gateway/bridge base topic (default: zigbee2mqtt).

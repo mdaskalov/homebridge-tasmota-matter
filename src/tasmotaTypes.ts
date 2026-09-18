@@ -17,12 +17,8 @@ export type DeviceConfiguration = {
   device: Device;
   logTimeouts?: boolean;
   logUnexpected?: boolean;
-  serialNumber?: string;
-  manufacturer?: string;
-  model?: string;
-  firmwareRevision?: string;
-  hardwareRevision?: string;
   deviceSensors?: string;
+  restored?: Partial<MatterAccessory<Device>>;
 };
 
 export type TasmotaResponse = {

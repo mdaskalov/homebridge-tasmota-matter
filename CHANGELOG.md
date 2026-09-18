@@ -2,6 +2,13 @@
 
 All notable changes will be documented in this file.
 
+## v0.0.20
+- Added energy monitoring
+- Added MQTT TLS support (`mqttTls`, `mqttTlsRejectUnauthorized`, `mqttCaCert`) and connection state tracking
+- Default MQTT connect timeout reduced to 3s
+- Simplified restored accessory info handling in `DeviceConfiguration`
+- Updated dependencies
+
 ## v0.0.19
 - Fail-closed device creation: a device is only added once all its info queries succeed
 - Never unregister accessories to refresh device info

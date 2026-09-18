@@ -66,11 +66,7 @@ export class TasmotaMatterPlatform implements DynamicPlatformPlugin {
         device,
         logTimeouts: this.config.logTimeouts,
         logUnexpected: this.config.logUnexpected,
-        serialNumber: restoredAccessory?.serialNumber,
-        manufacturer: restoredAccessory?.manufacturer,
-        model: restoredAccessory?.model,
-        firmwareRevision: restoredAccessory?.firmwareRevision,
-        hardwareRevision: restoredAccessory?.hardwareRevision,
+        restored: restoredAccessory,
       };
       const tasmotaInstance = await TasmotaAccessory.create(deviceConfiguration);
       if (tasmotaInstance) {
